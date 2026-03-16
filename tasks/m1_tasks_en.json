@@ -1,0 +1,78 @@
+[
+  {
+    "task_id": 1,
+    "instruction": "Pick up the tallest box."
+  },
+  {
+    "task_id": 2,
+    "instruction": "Pick up the smallest ball."
+  },
+  {
+    "task_id": 3,
+    "instruction": "Pick up the leftmost can."
+  },
+  {
+    "task_id": 4,
+    "instruction": "Pick up the bottle behind the bowl."
+  },
+  {
+    "task_id": 5,
+    "instruction": "Pick up the can to the left of the box."
+  },
+  {
+    "task_id": 6,
+    "instruction": "Pick up the frontmost box."
+  },
+  {
+    "task_id": 7,
+    "instruction": "Pick up the ball to the right of the banana."
+  },
+  {
+    "task_id": 8,
+    "instruction": "Pick up the occluded bowl."
+  },
+  {
+    "task_id": 9,
+    "instruction": "Pick up the can behind the box."
+  },
+  {
+    "task_id": 10,
+    "instruction": "Pick up the tomato can."
+  },
+  {
+    "task_id": 11,
+    "instruction": "Take out the middle block."
+  },
+  {
+    "task_id": 12,
+    "instruction": "Take out the sugar jar."
+  },
+  {
+    "task_id": 13,
+    "instruction": "First move away the bottle in front, then take out the bowl."
+  },
+  {
+    "task_id": 14,
+    "instruction": "Put all boxes on the left, and put bottles and cans on the right."
+  },
+  {
+    "task_id": 15,
+    "instruction": "Put all block-like objects into the tray."
+  },
+  {
+    "task_id": 16,
+    "instruction": "Arrange all boxes in a line."
+  },
+  {
+    "task_id": 17,
+    "instruction": "Put cylinders on the right and cuboids on the left."
+  },
+  {
+    "task_id": 18,
+    "instruction": "Put all containers into the tray."
+  },
+  {
+    "task_id": 19,
+    "instruction": "Put three bottle-or-can objects into the tray."
+  }
+]
