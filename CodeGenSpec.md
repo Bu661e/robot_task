@@ -93,7 +93,7 @@
 - `ExecutionResult`
 运行约束：
 - 只执行 Python
-- 入口函数固定为 `run(robot, perception, named_poses)`
+- 入口函数固定为 `run(robot, perception, robot_context)`
 - 代码抛出异常时，需转换为失败的 `ExecutionResult`
 ### 2.2 远程服务模块
 ### S1. `perception_service`
@@ -107,22 +107,22 @@
 - 第一步：读取 `object_texts`
 - 第二步：对每个物体名调用 `SAM3`，得到该类物体的候选 masks
 - 第三步：汇总所有 masks，并保留 `label -> mask` 对应关系
-- 第三步补充：如果没有分割出任何 mask，则直接返回失败的 `PerceptionHTTPResponse`，不再调用 `SAM3D`
+- 第三步补充：如果没有分割出任何 mask，则直接返回失败的 `PerceptionResponse`，不再调用 `SAM3D`
 - 第四步：将 RGB、point map、masks 送入 `SAM3D`
 - 第五步：对每个 mask 恢复 3D 信息，生成相机坐标系下的 objects
-- 第六步：在 HTTP 响应中返回每个 object 对应的 mask 文件
-- 第七步：返回 `PerceptionHTTPResponse`
+- 第六步：在 HTTP 响应中返回 `mask_files` 和对应的 `objects`
+- 第七步：返回 `PerceptionResponse`
 要求：
 - 服务必须保留 `SAM3` 的中间结果，便于调试
 - 服务返回的每个 object 必须带 `label`
-- 服务返回的每个 object 必须带 `source_mask_id`
+- 服务返回的每个 object 必须带 `object_mask_info`
 - `SAM3D` 的输入必须和 `SAM3` 输出实例一一对应
-- HTTP 响应必须包含每个 object 对应的 mask 文件内容
+- HTTP 响应必须包含 `mask_files`
 - 如果 `SAM3` 没有产出任何 mask，服务必须返回失败响应，并终止本次调用
 输入：
 - `PerceptionRequest`
 输出：
-- `PerceptionHTTPResponse`
+- `PerceptionResponse`
 ---
 ## 3. 机器人动作 API
 当前只开放一个动作接口给 LLM：
@@ -174,7 +174,7 @@ ParsedTask + FramePacket + PointMapPacket
   -> perception_client
   -> PerceptionRequest
   -> perception_service
-  -> PerceptionHTTPResponse
+  -> PerceptionResponse
   -> if success=false: terminate
   -> perception_client
   -> CameraPerceptionResult
@@ -193,17 +193,19 @@ PolicyCode + robot + RobotContext + WorldPerceptionResult
 ```
 ---
 ## 6. JSON 接口
-### 6.1 `TaskRequest`
+### 6.1 M1 `task_parser`
+#### 6.1.1 `TaskRequest`
 ```json
 {
-  "task_id": "task_0001",
+  "task_id": "1",
   "instruction": "Pick up the tallest bottle on the table"
 }
 ```
-### 6.2 `ParsedTask`
+
+#### 6.1.2 `ParsedTask`
 ```json
 {
-  "task_id": "task_0001",
+  "task_id": "1",
   "object_texts": ["bottle"]
 }
 ```
@@ -213,7 +215,9 @@ PolicyCode + robot + RobotContext + WorldPerceptionResult
 - 例子：
   - `Pick up the tallest bottle on the table` -> `["bottle"]`
   - `Place the blue_cube on top of the red_cube` -> `["blue_cube", "red_cube"]`
-### 6.3 `FramePacket`
+
+### 6.2 M2 `robot_bridge`
+#### 6.2.1 `FramePacket`
 ```json
 {
   "frame_id": "frame_0001",
@@ -222,12 +226,13 @@ PolicyCode + robot + RobotContext + WorldPerceptionResult
   "rgb_path": "data/frame_0001_rgb.png",
   "depth_path": "data/frame_0001_depth.npy",
   "camera": {
-    "intrinsics": [[fx, 0, cx], [0, fy, cy], [0, 0, 1]],
+    "intrinsic": [[fx, 0, cx], [0, fy, cy], [0, 0, 1]],
     "extrinsics_camera_to_world": [[...], [...], [...], [...]]
   }
 }
 ```
-### 6.4 `PointMapPacket`
+
+#### 6.2.2 `PointMapPacket`
 ```json
 {
   "frame_id": "frame_0001",
@@ -243,7 +248,27 @@ PolicyCode + robot + RobotContext + WorldPerceptionResult
 - 如果 point map 由深度图在本地自行反投影得到，则默认定义为相机坐标系
 - 如果当前实现使用 Isaac Sim Camera API 的 `get_pointcloud()` 且保持默认参数，则结果默认是世界坐标系
 - 本项目统一约定 `PointMapPacket` 使用相机坐标系
-### 6.5 `PerceptionRequest`
+
+### 6.3 M3 `robot_config_provider`
+#### 6.3.1 `RobotContext`
+```json
+{
+  "coordinate_frame": "world",
+  "robot_name": "franka",
+  "api_spec": {
+    "methods": [
+      "robot.pick_and_place(pick_position, place_position, rotation=None)"
+    ]
+  }
+}
+```
+说明：
+- 由系统预先设定，并由 `robot_config_provider` 提供
+- 不从机器人运行时中读取
+- `api_spec` 是给 `LLM` 的可调用接口说明
+
+### 6.4 M4 `perception_client`
+#### 6.4.1 `PerceptionRequest`
 这是 `perception_client` 发送给远程 `perception_service` 的 HTTP 请求体。
 ```json
 {
@@ -263,7 +288,8 @@ PolicyCode + robot + RobotContext + WorldPerceptionResult
   "object_texts": ["bottle"]
 }
 ```
-### 6.6 `PerceptionHTTPResponse`
+
+#### 6.4.2 `PerceptionResponse`
 这是远程 `perception_service` 返回给 `perception_client` 的 HTTP 响应体。
 ```json
 {
@@ -271,25 +297,30 @@ PolicyCode + robot + RobotContext + WorldPerceptionResult
   "frame_id": "frame_0001",
   "timestamp": "2026-03-16T09:00:00Z",
   "coordinate_frame": "camera",
+  "mask_files": [
+    {
+      "file_name": "mask_001.png",
+      "encoding": "base64_png",
+      "content": "iVBORw0KGgoAAA..."
+    }
+  ],
   "objects": [
     {
       "instance_id": "obj_001",
       "label": "bottle",
-      "source_mask_id": "mask_001",
-      "mask_file": {
-        "file_name": "mask_001.png",
-        "encoding": "base64_png",
-        "content": "iVBORw0KGgoAAA..."
+      "object_mask_info": {
+        "mask_id": "0",
+        "score": 0.7,
+        "bbox_xyxy": [121, 234, 123, 234]
       },
-      "3d_info": {
+      "object_3d_info": {
         "translation_m": [0.12, -0.03, 0.85],
         "rotation_wxyz": [1.0, 0.0, 0.0, 0.0],
         "scale_m": [0.06, 0.06, 0.24],
         "extra": {
           "sam3_score": 0.93
         }
-      },
-      ...
+      }
     }
   ]
 }
@@ -298,14 +329,14 @@ PolicyCode + robot + RobotContext + WorldPerceptionResult
 - 这是远程服务的原始 HTTP 响应体
 - `success=true` 表示感知链正常完成
 - `objects` 是数组，可能包含 0 个、1 个或多个物体，具体数量取决于当前图像内容和任务中的关键物体
-- 每个 object 都直接带自己的 mask 文件内容
-- `objects[i]` 和其中的 `mask_file` 是一一对应的
+- `mask_files` 保存当前响应中的所有 mask 文件内容
+- 每个 object 通过 `object_mask_info.mask_id` 对应到 `mask_files` 中的某个 mask
 - `perception_client` 负责把这些 mask 文件保存到本地主机
-- `3d_info` 的固定必选字段是：
+- `object_3d_info` 的固定必选字段是：
   - `translation_m`
   - `rotation_wxyz`
   - `scale_m`
-- `3d_info.extra` 是可选扩展字段
+- `object_3d_info.extra` 是必选扩展字段；没有额外信息时可传空对象 `{}`
 
 失败响应示例：
 ```json
@@ -314,63 +345,55 @@ PolicyCode + robot + RobotContext + WorldPerceptionResult
   "frame_id": "frame_0001",
   "timestamp": "2026-03-16T09:00:00Z",
   "coordinate_frame": "camera",
-  "error": {
-    "code": "SAM3_NO_MASK",
-    "message": "SAM3 did not produce any mask for the requested object_texts"
-  }
+  "error": "SAM3 did not produce any mask for the requested object_texts"
 }
 ```
 失败规则：
 - 当 `SAM3` 没有分割出任何 mask 时，远程服务必须返回失败响应
 - 一旦 `success=false`，本次任务后续不再执行 `pose_transformer`、`policy_model`、`policy_executor`
-### 6.7 `CameraPerceptionResult`
-这是 `perception_client` 接收到 `PerceptionHTTPResponse` 后，在本地主机保存 mask 文件并整理字段后得到的输出。
+
+#### 6.4.3 `CameraPerceptionResult`
+这是 `perception_client` 接收到 `PerceptionResponse` 后，在本地主机保存 mask 文件并整理字段后得到的输出。
 ```json
 {
   "frame_id": "frame_0001",
   "timestamp": "2026-03-16T09:00:00Z",
   "coordinate_frame": "camera",
-  "masks": [
-    {
-      "label": "bottle",
-      "mask_id": "mask_001",
-      "score": 0.93,
-      "bbox_xyxy": [120, 80, 180, 220],
-      "mask_path": "data/masks/mask_001.png"
-    }
-  ],
   "objects": [
     {
       "instance_id": "obj_001",
       "label": "bottle",
-      "source_mask_id": "mask_001",
-      "3d_info": {
+      "object_mask_info": {
+        "mask_id": "0",
+        "score": 0.7,
+        "bbox_xyxy": [121, 234, 123, 234]
+      },
+      "object_3d_info": {
         "translation_m": [0.12, -0.03, 0.85],
         "rotation_wxyz": [1.0, 0.0, 0.0, 0.0],
         "scale_m": [0.06, 0.06, 0.24],
         "extra": {
           "sam3_score": 0.93
         }
-      },
-      ...
+      }
     }
   ]
 }
 ```
 说明：
 - 这是 `perception_client` 处理 HTTP 响应后得到的本地 JSON
-- `mask_path` 是本地主机上的路径，不是远程主机路径
+- `mask_files` 会作为本地副产物保存，但不进入 `CameraPerceptionResult` 结构
 - `objects` 是数组，可能包含多个物体
 - `objects` 是服务内部 `SAM3D` 输出的结果
 - 这里的坐标仍然在相机坐标系下
-- `masks` 主要用于调试，可选返回
-- `masks[].score`、`masks[].bbox_xyxy` 是可选字段；如果远程服务未返回，则本地可以省略
-- `3d_info` 的固定必选字段是：
+- `object_3d_info` 的固定必选字段是：
   - `translation_m`
   - `rotation_wxyz`
   - `scale_m`
-- `3d_info.extra` 是可选扩展字段
-### 6.8 `WorldPerceptionResult`
+- `object_3d_info.extra` 是必选扩展字段；没有额外信息时可传空对象 `{}`
+
+### 6.5 M5 `pose_transformer`
+#### 6.5.1 `WorldPerceptionResult`
 ```json
 {
   "frame_id": "frame_0001",
@@ -380,9 +403,13 @@ PolicyCode + robot + RobotContext + WorldPerceptionResult
     {
       "instance_id": "obj_001",
       "label": "bottle",
-      "source_mask_id": "mask_001",
-      "3d_info": {
-        "translation_m": [0.42, 0.11, 0.15],
+      "object_mask_info": {
+        "mask_id": "0",
+        "score": 0.7,
+        "bbox_xyxy": [121, 234, 123, 234]
+      },
+      "object_3d_info": {
+        "translation_m": [0.12, -0.03, 0.85],
         "rotation_wxyz": [1.0, 0.0, 0.0, 0.0],
         "scale_m": [0.06, 0.06, 0.24],
         "extra": {
@@ -398,40 +425,18 @@ PolicyCode + robot + RobotContext + WorldPerceptionResult
 - `objects` 是数组，可能包含多个物体
 - 坐标已经在世界坐标系下
 - `LLM` 主要使用这个结果
-- `3d_info` 的固定必选字段是：
+- `object_3d_info` 的固定必选字段是：
   - `translation_m`
   - `rotation_wxyz`
   - `scale_m`
-- `3d_info.extra` 是可选扩展字段
-### 6.9 `RobotContext`
-```json
-{
-  "coordinate_frame": "world",
-  "robot_name": "franka",
-  "api_spec": {
-    "methods": [
-      {
-        "name": "pick_and_place",
-        "args": ["pick_position", "place_position", "rotation"]
-      }
-    ]
-  },
-  "named_poses": {
-    "hold_pose": [0.5, 0.0, 0.4]
-  }
-}
-```
-说明：
-- 由系统预先设定，并由 `robot_config_provider` 提供
-- 不从机器人运行时中读取
-- `api_spec` 是给 `LLM` 的可调用接口说明
-- `named_poses` 是可选字段，用于提供预定义位置
-- `named_poses["hold_pose"]` 表示默认放置位置，仅在任务没有明确放置目标时使用
-### 6.10 `PolicyRequest`
+- `object_3d_info.extra` 是必选扩展字段；没有额外信息时可传空对象 `{}`
+
+### 6.6 M6 `policy_model`
+#### 6.6.1 `PolicyRequest`
 ```json
 {
   "task": {
-    "task_id": "task_0001",
+    "task_id": "1",
     "instruction": "Pick up the tallest bottle on the table",
     "object_texts": ["bottle"]
   },
@@ -443,16 +448,19 @@ PolicyCode + robot + RobotContext + WorldPerceptionResult
       {
         "instance_id": "obj_001",
         "label": "bottle",
-        "source_mask_id": "mask_001",
-        "3d_info": {
-          "translation_m": [0.42, 0.11, 0.15],
+        "object_mask_info": {
+          "mask_id": "0",
+          "score": 0.7,
+          "bbox_xyxy": [121, 234, 123, 234]
+        },
+        "object_3d_info": {
+          "translation_m": [0.12, -0.03, 0.85],
           "rotation_wxyz": [1.0, 0.0, 0.0, 0.0],
           "scale_m": [0.06, 0.06, 0.24],
           "extra": {
             "sam3_score": 0.93
           }
-        },
-        ...
+        }
       }
     ]
   },
@@ -461,35 +469,32 @@ PolicyCode + robot + RobotContext + WorldPerceptionResult
     "robot_name": "franka",
     "api_spec": {
       "methods": [
-        {
-          "name": "pick_and_place",
-          "args": ["pick_position", "place_position", "rotation"]
-        }
+        "robot.pick_and_place(pick_position, place_position, rotation=None)"
       ]
-    },
-    "named_poses": {
-      "hold_pose": [0.5, 0.0, 0.4]
     }
   }
 }
 ```
-### 6.11 `PolicyCode`
+
+#### 6.6.2 `PolicyCode`
 ```json
 {
   "language": "python",
   "entrypoint": "run",
-  "code": "def run(robot, perception, named_poses):\n    bottles = [o for o in perception['objects'] if o['label'] == 'bottle']\n    target = max(bottles, key=lambda o: o['3d_info']['translation_m'][2] + o['3d_info']['scale_m'][2] / 2)\n    robot.pick_and_place(target['3d_info']['translation_m'], named_poses['hold_pose'], target['3d_info']['rotation_wxyz'])"
+  "code": "def run(robot, perception, robot_context):\n    bottles = [o for o in perception['objects'] if o['label'] == 'bottle']\n    target = max(bottles, key=lambda o: o['object_3d_info']['translation_m'][2] + o['object_3d_info']['scale_m'][2] / 2)\n    pick_position = target['object_3d_info']['translation_m']\n    place_position = [pick_position[0], pick_position[1], pick_position[2] + 0.15]\n    robot.pick_and_place(pick_position, place_position, target['object_3d_info']['rotation_wxyz'])"
 }
 ```
 说明：
 - `language` 当前固定为 `python`
 - `entrypoint` 当前固定为 `run`
-- 运行时签名固定为 `run(robot, perception, named_poses)`
+- 运行时签名固定为 `run(robot, perception, robot_context)`
 - 只允许使用执行器提供的入参和基础 Python 能力
-### 6.12 `ExecutionResult`
+
+### 6.7 M7 `policy_executor`
+#### 6.7.1 `ExecutionResult`
 ```json
 {
-  "task_id": "task_0001",
+  "task_id": "1",
   "success": true,
   "selected_object_id": "obj_001",
   "executed_api": "pick_and_place",
@@ -511,7 +516,7 @@ POST /perception/infer
 请求体：
 - `PerceptionRequest`
 返回：
-- `PerceptionHTTPResponse`
+- `PerceptionResponse`
 服务内部执行顺序：
 ```text
 for label in object_texts:
@@ -519,12 +524,12 @@ for label in object_texts:
 
 merge all masks
 if no mask:
-  return PerceptionHTTPResponse(success=false)
+  return PerceptionResponse(success=false)
 
 SAM3D(rgb, point_map, masks) -> camera_objects
 
 pack HTTP response:
-  camera_objects + mask_files -> PerceptionHTTPResponse
+  camera_objects + mask_files -> PerceptionResponse
 
 perception_client:
   if success=true:
@@ -536,22 +541,23 @@ perception_client:
 ### 8.0 感知失败时
 - 如果远程 `perception_service` 返回 `success=false`，则本次任务立即结束
 - 不再执行 `pose_transformer`、`policy_model`、`policy_executor`
-- 失败原因以 `PerceptionHTTPResponse.error` 为准
+- 失败原因以 `PerceptionResponse.error` 为准
 ### 8.1 用户只要求“拿起”
 统一转成：
 ```text
-pick_position = target.3d_info.translation_m
-place_position = named_poses["hold_pose"]
+pick_position = target.object_3d_info.translation_m
+place_position = [pick_position[0], pick_position[1], pick_position[2] + 0.15]
 ```
 说明：
-- 当前 v1 中，`target.3d_info.translation_m` 被视为抓取参考点
+- 当前 v1 中，`target.object_3d_info.translation_m` 被视为抓取参考点
+- 当前 v1 中，`0.15` 表示一个简单的上抬高度示例
 - 后续如果接入 grasp planner，可将该参考点替换为更精确的抓取点
 ### 8.2 用户要求“放到另一个物体上”
 可由 LLM 参考以下方式计算：
 ```text
-place_x = target_object.3d_info.translation_m[0]
-place_y = target_object.3d_info.translation_m[1]
-place_z = target_object.3d_info.translation_m[2] + target_object.3d_info.scale_m[2] / 2 + source_object.3d_info.scale_m[2] / 2 + 0.03
+place_x = target_object.object_3d_info.translation_m[0]
+place_y = target_object.object_3d_info.translation_m[1]
+place_z = target_object.object_3d_info.translation_m[2] + target_object.object_3d_info.scale_m[2] / 2 + source_object.object_3d_info.scale_m[2] / 2 + 0.03
 ```
 其中 `0.03` 是安全间隙。
 ---
@@ -572,7 +578,7 @@ res/{start_time}/{task_id}/
     point_map_packet.json
     robot_context.json
     perception_request.json
-    perception_http_response.json
+    perception_response.json
     camera_perception_result.json
     world_perception_result.json
     policy_request.json
@@ -581,8 +587,8 @@ res/{start_time}/{task_id}/
     execution_result.json
 ```
 说明：
-- `perception_http_response.json` 始终建议保留
-- 如果 `PerceptionHTTPResponse.success=false`，则 `camera_perception_result.json`、`world_perception_result.json`、`policy_request.json`、`policy_code.json`、`policy_code.py`、`execution_result.json` 可以不生成
+- `perception_response.json` 始终建议保留
+- 如果 `PerceptionResponse.success=false`，则 `camera_perception_result.json`、`world_perception_result.json`、`policy_request.json`、`policy_code.json`、`policy_code.py`、`execution_result.json` 可以不生成
 ---
 ## 10. 最小闭环
 ```text
@@ -590,8 +596,8 @@ res/{start_time}/{task_id}/
 2. `task_parser` 提取任务中的关键物体，得到 `ParsedTask`
 3. `robot_bridge` 从机器人运行时读取 RGB、Depth、相机参数，并生成 `PointMapPacket`
 4. `perception_client` 组装 `PerceptionRequest`，调用远程 `perception_service`
-5. 远程服务内部按 `SAM3 -> SAM3D` 顺序执行，返回 `PerceptionHTTPResponse`
-6. 如果 `PerceptionHTTPResponse.success=false`，则本次流程立即结束
+5. 远程服务内部按 `SAM3 -> SAM3D` 顺序执行，返回 `PerceptionResponse`
+6. 如果 `PerceptionResponse.success=false`，则本次流程立即结束
 7. `perception_client` 将 HTTP 响应整理为 `CameraPerceptionResult`
 8. `pose_transformer` 将相机坐标系结果转换为 `WorldPerceptionResult`
 9. `policy_model` 将任务、`WorldPerceptionResult` 和 `RobotContext` 交给 LLM，生成 Python 代码
