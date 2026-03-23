@@ -13,6 +13,9 @@ class RuntimeConfig:
     idle_sleep_s: float
     blocks_scene_stabilization_steps: int
     ycb_scene_stabilization_steps: int
+    capture_request_timeout_s: float
+    capture_render_steps: int
+    capture_max_wait_render_steps: int
 
 
 @dataclass(frozen=True)
@@ -42,6 +45,8 @@ class FrankaConfig:
 class CameraConfig:
     prim_path: str
     name: str
+    resolution: tuple[int, int]
+    frequency_hz: int
     position_m: Vec3
     rotation_euler_deg: Vec3
     focal_length_mm: float
@@ -112,6 +117,9 @@ RUNTIME_CONFIG = RuntimeConfig(
     idle_sleep_s=0.05,
     blocks_scene_stabilization_steps=5,
     ycb_scene_stabilization_steps=90,
+    capture_request_timeout_s=10.0,
+    capture_render_steps=6,
+    capture_max_wait_render_steps=20,
 )
 
 TABLE_CONFIG = TableConfig(
@@ -145,6 +153,8 @@ FRANKA_PHOTO_POSE_CONFIG = FrankaPhotoPoseConfig(
 TOP_CAMERA_CONFIG = CameraConfig(
     prim_path="/World/TopCamera",
     name="top_camera",
+    resolution=(1280, 960),
+    frequency_hz=20,
     position_m=(0.0, 0.0, 1.85),
     rotation_euler_deg=(0.0, 0.0, 0.0),
     focal_length_mm=18.0,

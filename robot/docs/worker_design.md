@@ -132,7 +132,10 @@ worker 是一个长期存活的机器人侧进程。
 当前状态：
 
 - 接口路径与返回结构已固定
-- Isaac Sim 采帧逻辑尚未实现
+- 已实现主线程采集 RGB / Depth / point map
+- 返回 `FramePacket.camera.intrinsic`
+- 返回 `FramePacket.camera.extrinsics_camera_to_world`
+- 文件固定落到 `session_dir/robot_frames/`
 
 ### `POST /pick_and_place`
 
@@ -177,7 +180,7 @@ worker 不通过 HTTP 回传大文件内容。
 - worker 在 `session_dir/robot_frames/` 下写采样文件
 - 返回 JSON 中只带文件路径
 
-后续 `capture_frame` 实现完成后，建议文件名固定为：
+当前 `capture_frame` 文件名约定为：
 
 - `{frame_id}_rgb.png`
 - `{frame_id}_depth.npy`
@@ -217,15 +220,13 @@ robot.pick_and_place(pick_position, place_position, rotation=None)
 
 ### 未完成
 
-- Isaac Sim 5.0.0 API 实测
-- RGB / Depth / point map 采样
+- `pick_and_place` 控制器接入与实测
 - `pick_and_place` 控制链路
 
 ## 8. 下个 session 必做事项
 
 1. 在正确的 Isaac Sim 5.0.0 环境中运行 `robot/autorun.sh`
-2. 先修通 `/health`
-3. 先人工检查 `blocks_scene` 与 `ycb_scene` 的布局
-4. 再实现 `capture_frame`
-5. 再实现 `pick_and_place`
-6. 最后再打开 `main.py` 里的 robot worker 运行测试
+2. 先验证 `/health` 与 `/capture_frame`
+3. 再人工检查 `blocks_scene` 与 `ycb_scene` 的布局
+4. 再实现 `pick_and_place`
+5. 最后再打开 `main.py` 里的 robot worker 运行测试

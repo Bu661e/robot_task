@@ -7,3 +7,5 @@
 - [x] 按 Isaac Sim 5.0.0 要求修正 `SimulationApp` 初始化前后的导入顺序
 - [x] 在 worker 启动与 `/reset` 后重新应用 Franka 拍照姿态
 - [x] 将 `/reset` 改为主线程执行，避免后台 HTTP 线程直接操作 `World`
+- [x] 实现 `capture_frame` 主线程采集 RGB / Depth / point map
+- [x] 为相机采帧增加渲染等待与空数组检查

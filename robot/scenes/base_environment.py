@@ -29,6 +29,7 @@ class BaseEnvironmentBuilder:
         import numpy as np
         from isaacsim.core.api.objects import FixedCuboid
         from isaacsim.core.prims import SingleArticulation
+        from isaacsim.sensors.camera import Camera
         from isaacsim.core.utils.stage import add_reference_to_stage, get_current_stage
         from pxr import Gf, UsdGeom, UsdLux
 
@@ -153,6 +154,14 @@ class BaseEnvironmentBuilder:
         camera_prim.GetHorizontalApertureAttr().Set(camera_config.horizontal_aperture_mm)
         camera_prim.GetVerticalApertureAttr().Set(camera_config.vertical_aperture_mm)
         camera_prim.GetClippingRangeAttr().Set(Gf.Vec2f(*camera_config.clipping_range_m))
+        world.scene.add(
+            Camera(
+                prim_path=camera_config.prim_path,
+                name=camera_config.name,
+                frequency=camera_config.frequency_hz,
+                resolution=camera_config.resolution,
+            )
+        )
 
         dome_light_prim = UsdLux.DomeLight.Define(stage, dome_light_config.prim_path)
         dome_light_prim.CreateIntensityAttr(dome_light_config.intensity)

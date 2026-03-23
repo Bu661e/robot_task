@@ -25,8 +25,8 @@
 - `robot_bridge` 已完成主进程桥接骨架
 - `robot/` 已补齐 worker 骨架、基础环境和两个桌面场景
 - `robot/config.py` 已作为 robot 侧统一手动配置入口
-- 当前已在 Isaac Sim 5.0.0 环境中实测通过 `/health` 与基础场景加载
-- `capture_frame` 和 `pick_and_place` 仍是待补完的 Isaac 侧实现点
+- 当前已在 Isaac Sim 5.0.0 环境中实测通过 `/health`、基础场景加载与 `capture_frame`
+- `pick_and_place` 仍是待补完的 Isaac 侧实现点
 
 ## 目录说明
 
@@ -92,15 +92,14 @@
 
 ## 当前还没完成什么
 
-- 没有在 Isaac Sim 5.0.0 环境中实机验证当前场景代码
-- `capture_frame` 还没有真正写出 RGB / Depth / point map
+- 还没有在非 headless 模式下完成人眼场景布局检查
+- `capture_frame` 已能写出 RGB / Depth / point map，并返回相机内参与 `camera -> world` 外参
 - `pick_and_place` 还没有真正接到 Franka 控制器
 
 ## 下个 session 建议顺序
 
 1. 在装好 Isaac Sim 5.0.0 的机器上先跑 `robot/autorun.sh`
-2. 用 `curl` 验证 `/health`
-3. 先直接肉眼检查 `blocks_scene` 和 `ycb_scene` 的布局是否符合预期
-4. 再补齐相机采帧
-5. 补齐 `pick_and_place`
-6. 再把 `main.py` 的 robot worker 开关真正打开做链路测试
+2. 用 `curl` 验证 `/health` 与 `/capture_frame`
+3. 用非 headless 模式肉眼检查 `blocks_scene` 和 `ycb_scene` 的布局是否符合预期
+4. 补齐 `pick_and_place`
+5. 再把 `main.py` 的 robot worker 开关真正打开做链路测试
