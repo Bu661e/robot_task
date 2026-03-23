@@ -5,6 +5,8 @@ set -e
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 REPO_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 
+export ISAAC_SIM_ROOT="${ISAAC_SIM_ROOT:-/root/isaacsim}"
+
 if [[ -n "${ISAAC_SIM_PYTHON:-}" ]]; then
   ISAAC_PYTHON_CMD="$ISAAC_SIM_PYTHON"
 elif [[ -n "${ISAAC_SIM_ROOT:-}" && -x "${ISAAC_SIM_ROOT}/python.sh" ]]; then

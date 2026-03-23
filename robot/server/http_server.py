@@ -9,6 +9,10 @@ from robot.runtime import RobotWorkerRuntime
 
 
 class RobotWorkerHTTPServer(ThreadingHTTPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+    block_on_close = False
+
     def __init__(self, server_address: tuple[str, int], runtime: RobotWorkerRuntime):
         super().__init__(server_address, RobotWorkerRequestHandler)
         self.runtime = runtime

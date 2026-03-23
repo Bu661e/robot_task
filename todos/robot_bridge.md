@@ -7,6 +7,6 @@
 - [x] 确定 LLM 侧只暴露 `pick_and_place`
 - [x] 实现 worker 启动、健康检查、关闭与 `RobotProxy` 桥接骨架
 - [x] 新增 `robot/` 下的 worker 骨架与交接文档
-- [ ] 在 Isaac Sim 5.0.0 环境中实测 `/health`
+- [x] 在 Isaac Sim 5.0.0 环境中实测 `/health`
 - [ ] 在 Isaac Sim 5.0.0 环境中实测 `capture_frame`
 - [ ] 在 Isaac Sim 5.0.0 环境中实测 `pick_and_place`

@@ -22,8 +22,9 @@ worker 是一个长期存活的机器人侧进程。
 3. `robot/autorun.sh` 使用 Isaac Sim Python 启动 `robot.worker_main`
 4. worker 初始化 `RobotWorkerRuntime`
 5. worker 尝试初始化 `SimulationApp`、`World`、基础环境和桌面环境
-6. worker 启动 HTTP 服务
-7. 主进程轮询 `/health`，ready 后认为 worker 可用
+6. worker 后台启动 HTTP 服务
+7. worker 主线程持续执行仿真循环
+8. 主进程轮询 `/health`，ready 后认为 worker 可用
 
 ### 2.2 运行期间
 
@@ -52,13 +53,20 @@ worker 是一个长期存活的机器人侧进程。
 
 当前代码位置：
 
-- `robot/scenes.py`
-- `BaseEnvironmentBuilder.build(world)`
+- `robot/config.py`
+- `robot/scenes/base_environment.py`
 
 当前状态：
 
-- 只保留了 `add_default_ground_plane()`
-- 其余对象还未补齐
+- 已包含：
+  - 地面
+  - 简洁桌子几何体
+  - Franka
+  - 顶视相机
+  - 基础灯光
+- 所有手动可调参数集中放在 `robot/config.py`
+- Franka 初始姿态已改为可配置的“拍照姿态”
+- 顶视相机已增加“中央工作区”配置，用于让拍照视野优先覆盖桌面中间区域
 
 ### 3.2 桌面环境
 
@@ -72,12 +80,20 @@ worker 是一个长期存活的机器人侧进程。
 
 当前代码位置：
 
-- `robot/scenes.py`
+- `robot/scenes/__init__.py`
 - `get_desktop_scene_builder(scene_id)`
+- `robot/scenes/desktop_scene_blocks.py`
+- `robot/scenes/desktop_scene_ycb.py`
 
 当前状态：
 
-- 只提供 `default_scene` 占位实现
+- 已提供：
+  - `default_scene`
+    - `blocks_scene` 的兼容别名
+  - `blocks_scene`
+    - 4 个固定红蓝方块
+  - `ycb_scene`
+    - 4 个 YCB physics 物体
 
 ## 4. HTTP 协议
 
@@ -139,14 +155,17 @@ worker 是一个长期存活的机器人侧进程。
 
 当前实现：
 
-- 如果 runtime 已 ready，会直接调 `world.reset()`
+- 如果 runtime 已 ready，会先登记 reset 请求，再由主仿真线程执行 `world.reset()`
+- reset 后会重新进入短暂稳定阶段，之后 `/health.ready` 再恢复为 `true`
+- 这样可以避免后台 HTTP 线程直接操作 Isaac `World`，减少 reset 后姿态不生效的问题
 
 ### `POST /shutdown`
 
 当前实现：
 
+- 设置 runtime 停止标记
 - 触发 HTTP server 停止
-- 之后由 `worker_main.py` 在退出阶段关闭 runtime
+- `worker_main.py` 最终关闭 runtime 和 `SimulationApp`
 
 ## 5. 文件落盘策略
 
@@ -183,15 +202,22 @@ robot.pick_and_place(pick_position, place_position, rotation=None)
 ### 已完成
 
 - 主进程侧 `robot_bridge` 启动/轮询/关闭骨架
-- worker 入口、runtime、HTTP server、scene builder 文件结构
+- worker 入口、runtime、HTTP server、主循环结构
 - 本地 HTTP 协议路径与返回结构
 - 日志写入路径约定
+- 基础环境：
+  - 桌子
+  - Franka
+  - 顶视相机
+  - 灯光
+- 两个桌面场景：
+  - `blocks_scene`
+  - `ycb_scene`
+- `robot/config.py` 统一手动配置入口
 
 ### 未完成
 
 - Isaac Sim 5.0.0 API 实测
-- Franka 与相机的真实加载
-- 桌面物体场景配置
 - RGB / Depth / point map 采样
 - `pick_and_place` 控制链路
 
@@ -199,6 +225,7 @@ robot.pick_and_place(pick_position, place_position, rotation=None)
 
 1. 在正确的 Isaac Sim 5.0.0 环境中运行 `robot/autorun.sh`
 2. 先修通 `/health`
-3. 再实现 `capture_frame`
-4. 再实现 `pick_and_place`
-5. 最后再打开 `main.py` 里的 robot worker 运行测试
+3. 先人工检查 `blocks_scene` 与 `ycb_scene` 的布局
+4. 再实现 `capture_frame`
+5. 再实现 `pick_and_place`
+6. 最后再打开 `main.py` 里的 robot worker 运行测试
