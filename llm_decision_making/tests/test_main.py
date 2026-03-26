@@ -5,7 +5,9 @@ import inspect
 from pathlib import Path
 from typing import Sequence, get_type_hints
 
-from modules.schemas import TaskDescription
+import pytest
+
+from modules.schemas import ParsedTask, TaskDescription
 from main import load_task_from_cli, process
 
 
@@ -41,14 +43,24 @@ def test_load_task_from_cli_accepts_custom_task_file(tmp_path: Path) -> None:
     )
 
 
-def test_process_returns_explicit_task() -> None:
+def test_process_returns_parsed_task(monkeypatch: pytest.MonkeyPatch) -> None:
     task = TaskDescription(
         task_id="manual",
         objects_env_id="env-1",
         instruction="Do not load from CLI.",
     )
 
-    assert process(task) == task
+    class FakeTaskParser:
+        @classmethod
+        def from_config(cls) -> FakeTaskParser:
+            return cls()
+
+        def parse_task(self, task_description: TaskDescription) -> ParsedTask:
+            return ParsedTask(task_id=task_description.task_id, object_texts=["bottle"])
+
+    monkeypatch.setattr("main.TaskParser", FakeTaskParser)
+
+    assert process(task) == ParsedTask(task_id="manual", object_texts=["bottle"])
 
 
 def test_process_signature_uses_fixed_task_type() -> None:
@@ -56,6 +68,7 @@ def test_process_signature_uses_fixed_task_type() -> None:
 
     assert task_parameter.default is inspect.Signature.empty
     assert get_type_hints(process)["task"] is TaskDescription
+    assert get_type_hints(process)["return"] is ParsedTask
 
 
 def test_load_task_from_cli_signature_uses_fixed_argv_type() -> None:
