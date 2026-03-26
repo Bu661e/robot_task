@@ -7,18 +7,17 @@ from typing import Sequence, get_type_hints
 
 import pytest
 
-from modules.schemas import ParsedTask, TaskDescription
+from modules.schemas import ParsedTask, SourceTask
 from main import load_task_from_cli, process
 
 
 def test_load_task_from_cli_uses_default_task_file() -> None:
-    task = load_task_from_cli(["--task-id", "2"])
-
-    assert task == TaskDescription(
-        task_id="2",
-        objects_env_id="2-ycb",
-        instruction="Pick up the smallest ball.",
+    task, objects_env_id = load_task_from_cli(
+        ["--task-id", "2", "--objects-env-id", "2-ycb"]
     )
+
+    assert task == SourceTask(task_id="2", instruction="Pick up the smallest ball.")
+    assert objects_env_id == "2-ycb"
 
 
 def test_load_task_from_cli_accepts_custom_task_file(tmp_path: Path) -> None:
@@ -27,47 +26,66 @@ def test_load_task_from_cli_accepts_custom_task_file(tmp_path: Path) -> None:
         '\n'.join(
             [
                 '- task_id: "10"',
-                '  objects_env_id: "custom-env"',
                 '  instruction: "Pick up the red cube."',
             ]
         ),
         encoding="utf-8",
     )
 
-    task = load_task_from_cli(["--task-file", str(task_file), "--task-id", "10"])
-
-    assert task == TaskDescription(
-        task_id="10",
-        objects_env_id="custom-env",
-        instruction="Pick up the red cube.",
+    task, objects_env_id = load_task_from_cli(
+        [
+            "--task-file",
+            str(task_file),
+            "--task-id",
+            "10",
+            "--objects-env-id",
+            "custom-env",
+        ]
     )
+
+    assert task == SourceTask(task_id="10", instruction="Pick up the red cube.")
+    assert objects_env_id == "custom-env"
+
+
+def test_load_task_from_cli_requires_objects_env_id() -> None:
+    with pytest.raises(SystemExit):
+        load_task_from_cli(["--task-id", "2"])
+
+
+def test_load_task_from_cli_rejects_blank_objects_env_id() -> None:
+    with pytest.raises(ValueError, match="objects_env_id must not be empty"):
+        load_task_from_cli(["--task-id", "2", "--objects-env-id", "   "])
 
 
 def test_process_returns_parsed_task(monkeypatch: pytest.MonkeyPatch) -> None:
-    task = TaskDescription(
-        task_id="manual",
-        objects_env_id="env-1",
-        instruction="Do not load from CLI.",
-    )
+    task = SourceTask(task_id="manual", instruction="Do not load from CLI.")
 
     class FakeTaskParser:
         @classmethod
         def from_config(cls) -> FakeTaskParser:
             return cls()
 
-        def parse_task(self, task_description: TaskDescription) -> ParsedTask:
-            return ParsedTask(task_id=task_description.task_id, object_texts=["bottle"])
+        def parse_task(self, task_description: SourceTask) -> ParsedTask:
+            return ParsedTask(
+                task_id=task_description.task_id,
+                instruction=task_description.instruction,
+                object_texts=["bottle"],
+            )
 
     monkeypatch.setattr("main.TaskParser", FakeTaskParser)
 
-    assert process(task) == ParsedTask(task_id="manual", object_texts=["bottle"])
+    assert process(task, robot_client=object()) == ParsedTask(
+        task_id="manual",
+        instruction="Do not load from CLI.",
+        object_texts=["bottle"],
+    )
 
 
 def test_process_signature_uses_fixed_task_type() -> None:
     task_parameter = inspect.signature(process).parameters["task"]
 
     assert task_parameter.default is inspect.Signature.empty
-    assert get_type_hints(process)["task"] is TaskDescription
+    assert get_type_hints(process)["task"] is SourceTask
     assert get_type_hints(process)["return"] is ParsedTask
 
 
@@ -76,6 +94,7 @@ def test_load_task_from_cli_signature_uses_fixed_argv_type() -> None:
 
     assert argv_parameter.default is inspect.Signature.empty
     assert get_type_hints(load_task_from_cli)["argv"] == Sequence[str]
+    assert get_type_hints(load_task_from_cli)["return"] == tuple[SourceTask, str]
 
 
 def test_default_task_file_is_defined_in_main_config() -> None:

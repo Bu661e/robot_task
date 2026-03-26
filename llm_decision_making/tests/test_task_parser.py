@@ -5,7 +5,7 @@ import importlib
 import pytest
 from openai.types.chat import ChatCompletionMessageParam
 
-from modules.schemas import ParsedTask, TaskDescription
+from modules.schemas import ParsedTask, SourceTask
 from modules.task_parser import TaskParser
 
 
@@ -47,28 +47,34 @@ def test_task_parser_extracts_english_objects() -> None:
     task_parser = build_task_parser(FakeLLMClient('{"object_texts": ["bottle"]}'))
 
     parsed_task = task_parser.parse_task(
-        TaskDescription(
+        SourceTask(
             task_id="1",
-            objects_env_id="2-ycb",
             instruction="Pick up the tallest bottle on the table",
         )
     )
 
-    assert parsed_task == ParsedTask(task_id="1", object_texts=["bottle"])
+    assert parsed_task == ParsedTask(
+        task_id="1",
+        instruction="Pick up the tallest bottle on the table",
+        object_texts=["bottle"],
+    )
 
 
 def test_task_parser_extracts_chinese_objects() -> None:
     task_parser = build_task_parser(FakeLLMClient('{"object_texts": ["瓶子"]}'))
 
     parsed_task = task_parser.parse_task(
-        TaskDescription(
+        SourceTask(
             task_id="2",
-            objects_env_id="2-ycb",
             instruction="把桌面上最高的瓶子拿起来",
         )
     )
 
-    assert parsed_task == ParsedTask(task_id="2", object_texts=["瓶子"])
+    assert parsed_task == ParsedTask(
+        task_id="2",
+        instruction="把桌面上最高的瓶子拿起来",
+        object_texts=["瓶子"],
+    )
 
 
 def test_task_parser_filters_support_surfaces_and_duplicates() -> None:
@@ -77,14 +83,17 @@ def test_task_parser_filters_support_surfaces_and_duplicates() -> None:
     )
 
     parsed_task = task_parser.parse_task(
-        TaskDescription(
+        SourceTask(
             task_id="3",
-            objects_env_id="2-ycb",
             instruction="Pick up the tallest bottle on the table",
         )
     )
 
-    assert parsed_task == ParsedTask(task_id="3", object_texts=["bottle"])
+    assert parsed_task == ParsedTask(
+        task_id="3",
+        instruction="Pick up the tallest bottle on the table",
+        object_texts=["bottle"],
+    )
 
 
 def test_task_parser_raises_for_invalid_json_response() -> None:
@@ -92,9 +101,8 @@ def test_task_parser_raises_for_invalid_json_response() -> None:
 
     with pytest.raises(ValueError, match="Task parser returned invalid JSON"):
         task_parser.parse_task(
-            TaskDescription(
+            SourceTask(
                 task_id="4",
-                objects_env_id="2-ycb",
                 instruction="Pick up the tallest bottle on the table",
             )
         )
@@ -110,14 +118,17 @@ def test_task_parser_from_config_uses_shared_default_llm_client(
     task_parser = task_parser_module.TaskParser.from_config()
 
     parsed_task = task_parser.parse_task(
-        TaskDescription(
+        SourceTask(
             task_id="5",
-            objects_env_id="2-ycb",
             instruction="Pick up the tallest bottle on the table",
         )
     )
 
-    assert parsed_task == ParsedTask(task_id="5", object_texts=["bottle"])
+    assert parsed_task == ParsedTask(
+        task_id="5",
+        instruction="Pick up the tallest bottle on the table",
+        object_texts=["bottle"],
+    )
 
 
 def test_task_parser_config_only_keeps_parser_specific_settings() -> None:

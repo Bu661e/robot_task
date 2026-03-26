@@ -17,7 +17,7 @@ from config.task_parser_config import (
 )
 from utils.llm_client import default_llm_client
 
-from .schemas import ParsedTask, TaskDescription
+from .schemas import ParsedTask, SourceTask
 
 # 这是一个“接口约束”，不是实际实现。它的作用是说明：只要一个对象有这个 chat(...) -> str 方法，TaskParser 就能用它。
 class LLMClientProtocol(Protocol):
@@ -61,7 +61,7 @@ class TaskParser:
             excluded_object_texts=TASK_PARSER_EXCLUDED_OBJECT_TEXTS,
         )
 
-    def parse_task(self, task: TaskDescription) -> ParsedTask:
+    def parse_task(self, task: SourceTask) -> ParsedTask:
         system_message: ChatCompletionSystemMessageParam = {
             "role": "system",
             "content": self._system_prompt,
@@ -83,7 +83,11 @@ class TaskParser:
             timeout_s=self._timeout_s,
         )
         object_texts = self._parse_llm_output(response_content)
-        return ParsedTask(task_id=task.task_id, object_texts=object_texts)
+        return ParsedTask(
+            task_id=task.task_id,
+            instruction=task.instruction,
+            object_texts=object_texts,
+        )
 
     def _parse_llm_output(self, response_content: str) -> list[str]:
         normalized_content = self._strip_markdown_code_fence(response_content)

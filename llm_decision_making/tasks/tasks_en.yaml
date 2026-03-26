@@ -1,7 +1,5 @@
 - task_id: "1"
-  objects_env_id: "2-ycb"
   instruction: "Pick up the tallest box."
 
 - task_id: "2"
-  objects_env_id: "2-ycb"
   instruction: "Pick up the smallest ball."
