@@ -31,8 +31,14 @@
 这个模块后续支持两种入口：
 - HTTP 请求
 - 结合命令行参数中读取 YAML 文件内容
-  
+
+当前 CLI 入口约定：
+- 通过 `--task-file` 指定 YAML 文件路径，默认使用 `tasks/tasks_en.yaml`
+- 通过 `--task-id` 从 YAML 任务列表中选择单个任务
+
 输出是一个自定义的 `TaskDescription` 结构。
+
+内部实现上，YAML 文件读取这类与单个业务模块弱耦合的通用逻辑，应优先复用 `utils/yaml_loader.py`，避免在 `task_loader`、`policy_model` 等模块中重复实现。
 
 
 
@@ -141,10 +147,15 @@ perception_client的功能包括：
   - 策略执行
 - `modules/schemas.py`
   - 本模块使用的数据结构定义
+- `utils/yaml_loader.py`
+  - 通用 YAML 文件读取工具，供任务文件和 prompt 配置文件复用
 
 - configs/
   - 存放配置文件，包括远端服务地址、模型参数等
+  - config/main_config.py 是 `main.py` 的配置文件，定义默认任务文件路径等入口参数
   - config/task_parser_config.py 是 `task_parser` 模块的配置文件，定义了任务解析相关的参数和选项
+- tasks/
+  - 存放任务 YAML 文件，例如 `tasks/tasks_en.yaml`
 
 ## 一句话总结
 

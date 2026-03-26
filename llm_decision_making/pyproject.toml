@@ -1,0 +1,17 @@
+[project]
+name = "llm-decision-making"
+version = "0.1.0"
+description = "Task loading and orchestration for robot decision making."
+requires-python = ">=3.11"
+dependencies = [
+    "PyYAML>=6.0.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
