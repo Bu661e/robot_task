@@ -62,6 +62,10 @@
 - 自审重点包括：是否破坏模块边界、是否硬编码配置、类型和 Schema 是否清楚、日志是否补全、`README.md` 和协议文档是否同步。
 - 关键改动完成后，如有需要，可再补一次 Codex review。
 
+### Git提交
+- 提交时记得记录本次提交来自 llm_decision_making 模块, 再使用 git-commit skill
+  - "llm_decision_making: {xxx}" 其中 xxx 是使用 git-commit skill得到本次提交的简要说明
+
 ## 额外要求
 - 当你有任何不清楚的地方，或是我没有表达清楚的地方，请务必先问我，而不是自己猜测着写代码。
 - 在编写模块代码前，先检查 `README.md` 与当前任务是否一致，如果不一致询问是否更改`README`或更改任务。
