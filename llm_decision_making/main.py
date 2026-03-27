@@ -9,7 +9,7 @@ from config.main_config import DEFAULT_TASK_FILE
 from modules.schemas import ParsedTask, SourceTask
 from modules.task_parser import TaskParser
 from modules.task_loader import TaskLoader
-from utils.robot_client import RobotClient
+from utils.robot_client import RobotClient, default_robot_client
 
 
 def _normalize_objects_env_id(objects_env_id: str) -> str:
@@ -45,6 +45,11 @@ def load_task_from_cli(argv: Sequence[str]) -> tuple[SourceTask, str]:
     objects_env_id = _normalize_objects_env_id(args.objects_env_id)
     return task, objects_env_id
 
+
+def create_robot_client() -> RobotClient:
+    return default_robot_client
+
+
 # 整个llm决策流程的主函数，输入是一个SourceTask，最后会让远程执行模块执行这个任务
 def process(task: SourceTask, robot_client: RobotClient) -> ParsedTask:
     task_parser: TaskParser = TaskParser.from_config()
@@ -55,6 +60,6 @@ def process(task: SourceTask, robot_client: RobotClient) -> ParsedTask:
 
 if __name__ == "__main__":
     new_task, objects_env_id = load_task_from_cli(sys.argv[1:])
-    # TODO：使用 objects_env_id 创建 robot_client，这部分不在本次改动中实现
-    robot_client = RobotClient()  # Replace with actual robot client initialization
+    # TODO：在后续 session 流程中，把 objects_env_id 传给 robot_client.create_session(...)
+    robot_client = create_robot_client()
     process(new_task, robot_client)

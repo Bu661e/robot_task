@@ -88,15 +88,26 @@
 它属于 `utils/` 中的通用远端访问工具，而不是主流程编排模块。
 
 `robot_client` 的功能包括：
-- 创建机器人 session，并发送 `backend_type` 和 `environment_id`
-- 查询机器人 session 状态
-- 关闭机器人 session
-- 请求机器人端摄像头数据，包括相机参数和图像 artifact 引用
-- 下载 `robot_service` 返回的 artifact，例如 RGB 图、深度图等二进制内容
-- 请求机器人端的可用动作 API
-- 向指定 session 提交 task record，其中包含 `task`、`policy_source` 和 `perception_data`
-- 查询指定 session 下已经提交过的 task record 列表
-- 必要时中止某条 task record
+- 第一阶段已实现：
+  - 创建机器人 session，并发送 `backend_type` 和 `environment_id`
+  - 查询机器人 session 状态
+  - 关闭机器人 session
+  - 请求机器人端状态
+  - 请求机器人端摄像头数据，包括相机参数和图像 artifact 引用
+  - 下载 `robot_service` 返回的 artifact，例如 RGB 图、深度图等二进制内容
+- 第二阶段待实现：
+  - 请求机器人端的可用动作 API
+  - 向指定 session 提交 task record，其中包含 `task`、`policy_source` 和 `perception_data`
+  - 查询指定 session 下已经提交过的 task record 列表
+  - 必要时中止某条 task record
+
+当前 `robot_client` 的运行时配置放在 `config/robot_config.py`，包括：
+- `ROBOT_BASE_URL`
+- `ROBOT_BACKEND_TYPE`
+- `ROBOT_TIMEOUT_S`
+- `ROBOT_TRUST_ENV`
+
+与 `robot_service` 第一阶段协议对应的数据结构放在 `utils/robot_schemas.py`，而不是 `modules/`。
 
 当前约定中，`session_id` 是 `robot_service` 返回的持久化实例标识，后续所有 session 级接口都基于这个 id 调用；该 id 本身会编码 `backend_type`。
 
@@ -190,12 +201,15 @@
   - 通用 OpenAI-compatible LLM 客户端，并提供共享 client 对象，供 `task_parser` 和后续 `policy_model` 复用
 - `utils/robot_client.py`
   - robot HTTP 客户端工具
+- `utils/robot_schemas.py`
+  - robot HTTP 协议第一阶段的数据结构
 - `utils/perception_client.py`
   - perception HTTP 客户端工具
 
 - configs/
   - 存放配置文件，包括远端服务地址、模型参数等
   - config/llm_config.py 定义共享 LLM 连接配置，例如 `LLM_BASE_URL`、`LLM_API_KEY` 和 `LLM_TRUST_ENV`
+  - config/robot_config.py 定义 `robot_client` 使用的共享连接配置，例如 `ROBOT_BASE_URL`、`ROBOT_BACKEND_TYPE`、`ROBOT_TIMEOUT_S` 和 `ROBOT_TRUST_ENV`
   - config/main_config.py 是 `main.py` 的配置文件，定义默认任务文件路径等入口参数
   - config/task_parser_config.py 是 `task_parser` 模块的配置文件，定义模型、prompt 和过滤项等 parser 自身参数
 - tasks/

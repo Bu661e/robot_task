@@ -8,7 +8,7 @@ from typing import Sequence, get_type_hints
 import pytest
 
 from modules.schemas import ParsedTask, SourceTask
-from main import load_task_from_cli, process
+from main import create_robot_client, load_task_from_cli, process
 
 
 def test_load_task_from_cli_uses_default_task_file() -> None:
@@ -103,3 +103,12 @@ def test_default_task_file_is_defined_in_main_config() -> None:
     assert main_config.DEFAULT_TASK_FILE == (
         Path(__file__).resolve().parent.parent / "tasks" / "tasks_en.yaml"
     )
+
+
+def test_create_robot_client_returns_shared_default_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sentinel = object()
+    monkeypatch.setattr("main.default_robot_client", sentinel)
+
+    assert create_robot_client() is sentinel
