@@ -205,7 +205,8 @@
 
 - `docs/protocols/llm_decision_making__robot_service.md`
   - `llm_decision_making` 与 `robot_service` 的共享 HTTP 协议文档
-  - 后续与 `perception_service` 的共享协议文档也应统一放在这个目录下
+- `docs/protocols/llm_decision_making__perception_service.md`
+  - `llm_decision_making` 与 `perception_service` 的共享 HTTP 协议文档
 
 ## 一句话总结
 

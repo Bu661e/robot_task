@@ -1,6 +1,6 @@
 # 决策和机器人接口文档
 
-最后修改：2026-03-27-21:37
+最后修改：2026-03-28-03:16
 
 本文档定义 `llm_decision_making` 与 `robot_service` 之间的 HTTP 接口草案。
 
@@ -336,7 +336,7 @@ task 执行通常不是瞬时完成的，因此每条 task 记录都应维护独
       },
       "extrinsics": {
         "translation": [0.0, 0.0, 1.0],
-        "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0]
+        "quaternion_wxyz": [1.0, 0.0, 0.0, 0.0]
       },
       "ext": {
         "depth_image": {
@@ -356,6 +356,7 @@ task 执行通常不是瞬时完成的，因此每条 task 记录都应维护独
 - `cameras` 长期保持数组结构，即使当前只有一个相机也返回单元素数组
 - `rgb_image` 为必需字段
 - `depth_image` 为可选字段，当前放在每个 camera 对象的 `ext` 中
+- `extrinsics.quaternion_wxyz` 采用 Isaac Sim Core / Camera API 的 scalar-first 顺序，即 `wxyz`
 
 ### 4.3 能力描述接口
 
