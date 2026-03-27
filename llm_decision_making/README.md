@@ -201,6 +201,12 @@
 - tasks/
   - 存放任务 YAML 文件，例如 `tasks/tasks_en.yaml`
 
+## 仓库根目录中的共享协议文档
+
+- `docs/protocols/llm_decision_making__robot_service.md`
+  - `llm_decision_making` 与 `robot_service` 的共享 HTTP 协议文档
+  - 后续与 `perception_service` 的共享协议文档也应统一放在这个目录下
+
 ## 一句话总结
 
 `llm_decision_making` 是一个只关心“任务、协议、数据、决策”的模块；  
