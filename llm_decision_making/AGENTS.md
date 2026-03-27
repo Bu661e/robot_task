@@ -64,8 +64,7 @@
 - 关键改动完成后，如有需要，可再补一次 Codex review。
 
 ### Git提交
-- 提交时记得记录本次提交来自 llm_decision_making 模块, 再使用 git-commit skill
-  - "llm_decision_making: {xxx}" 其中 xxx 是使用 git-commit skill得到本次提交的简要说明
+- 提交的Message用中文
 
 
 
@@ -81,5 +80,5 @@
 - 当你有任何不清楚的地方，或是我没有表达清楚的地方，请务必先问我，而不是自己猜测着写代码。
 - 当前 README 中内容还不完整，或是我对于其中具体内容还是模糊的。等实现完某个模块或数据结构时候，需要回过头来完善 README 中对应的内容
 - 当你觉得该git提交了就提醒我
-- 如果需要某一个小任务可以使用subagent的话，就使用
+- 禁止使用subagent，如果一定要使用在使用前询问我，使用的模型是gpt-5.4-medium
 
