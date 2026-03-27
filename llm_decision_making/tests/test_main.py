@@ -8,7 +8,8 @@ from typing import Sequence, get_type_hints
 import pytest
 
 from modules.schemas import ParsedTask, SourceTask
-from main import create_robot_client, load_task_from_cli, process
+from main import load_task_from_cli, run
+from utils.robot_schemas import SessionInfo
 
 
 def test_load_task_from_cli_uses_default_task_file() -> None:
@@ -57,8 +58,18 @@ def test_load_task_from_cli_rejects_blank_objects_env_id() -> None:
         load_task_from_cli(["--task-id", "2", "--objects-env-id", "   "])
 
 
-def test_process_returns_parsed_task(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_returns_parsed_task_and_calls_robot_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     task = SourceTask(task_id="manual", instruction="Do not load from CLI.")
+    session = SessionInfo(
+        session_id="sess_1",
+        session_status="ready",
+        backend_type="isaac_sim",
+        environment_id="2-ycb",
+        ext={},
+    )
+    call_order: list[tuple[str, str]] = []
 
     class FakeTaskParser:
         @classmethod
@@ -73,20 +84,40 @@ def test_process_returns_parsed_task(monkeypatch: pytest.MonkeyPatch) -> None:
             )
 
     monkeypatch.setattr("main.TaskParser", FakeTaskParser)
+    
+    class FakeRobotClient:
+        def get_robot(self, session_id: str) -> object:
+            call_order.append(("get_robot", session_id))
+            return object()
 
-    assert process(task, robot_client=object()) == ParsedTask(
-        task_id="manual",
-        instruction="Do not load from CLI.",
-        object_texts=["bottle"],
-    )
+        def get_cameras(self, session_id: str) -> object:
+            call_order.append(("get_cameras", session_id))
+            return object()
+
+        def close_session(self, session_id: str) -> object:
+            call_order.append(("close_session", session_id))
+            return object()
+
+    monkeypatch.setattr("main.default_robot_client", FakeRobotClient())
+
+    assert run(task, session) is None
+    assert call_order == [
+        ("get_robot", "sess_1"),
+        ("get_cameras", "sess_1"),
+        ("close_session", "sess_1"),
+    ]
 
 
-def test_process_signature_uses_fixed_task_type() -> None:
-    task_parameter = inspect.signature(process).parameters["task"]
+def test_run_signature_uses_fixed_task_and_session_types() -> None:
+    signature = inspect.signature(run)
+    task_parameter = signature.parameters["task"]
+    session_parameter = signature.parameters["session"]
 
     assert task_parameter.default is inspect.Signature.empty
-    assert get_type_hints(process)["task"] is SourceTask
-    assert get_type_hints(process)["return"] is ParsedTask
+    assert session_parameter.default is inspect.Signature.empty
+    assert get_type_hints(run)["task"] is SourceTask
+    assert get_type_hints(run)["session"] is SessionInfo
+    assert get_type_hints(run)["return"] is type(None)
 
 
 def test_load_task_from_cli_signature_uses_fixed_argv_type() -> None:
@@ -105,10 +136,56 @@ def test_default_task_file_is_defined_in_main_config() -> None:
     )
 
 
-def test_create_robot_client_returns_shared_default_client(
+def test_main_does_not_expose_helper_functions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    sentinel = object()
-    monkeypatch.setattr("main.default_robot_client", sentinel)
+    main_module = importlib.import_module("main")
 
-    assert create_robot_client() is sentinel
+    assert not hasattr(main_module, "_normalize_objects_env_id")
+    assert not hasattr(main_module, "create_robot_client")
+
+
+def test_run_closes_session_when_task_parser_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task = SourceTask(task_id="manual", instruction="Pick up the bottle.")
+    session = SessionInfo(
+        session_id="sess_1",
+        session_status="ready",
+        backend_type="isaac_sim",
+        environment_id="2-ycb",
+        ext={},
+    )
+    call_order: list[tuple[str, str]] = []
+
+    class FakeTaskParser:
+        @classmethod
+        def from_config(cls) -> FakeTaskParser:
+            return cls()
+
+        def parse_task(self, task_description: SourceTask) -> ParsedTask:
+            raise RuntimeError("parse failed")
+
+    monkeypatch.setattr("main.TaskParser", FakeTaskParser)
+
+    class FakeRobotClient:
+        def get_robot(self, session_id: str) -> object:
+            call_order.append(("get_robot", session_id))
+            return object()
+
+        def get_cameras(self, session_id: str) -> object:
+            call_order.append(("get_cameras", session_id))
+            return object()
+
+        def close_session(self, session_id: str) -> object:
+            call_order.append(("close_session", session_id))
+            return object()
+
+    monkeypatch.setattr("main.default_robot_client", FakeRobotClient())
+
+    with pytest.raises(RuntimeError, match="parse failed"):
+        run(task, session)
+
+    assert call_order == [
+        ("close_session", "sess_1"),
+    ]

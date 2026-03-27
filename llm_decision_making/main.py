@@ -9,15 +9,8 @@ from config.main_config import DEFAULT_TASK_FILE
 from modules.schemas import ParsedTask, SourceTask
 from modules.task_parser import TaskParser
 from modules.task_loader import TaskLoader
-from utils.robot_client import RobotClient, default_robot_client
-
-
-def _normalize_objects_env_id(objects_env_id: str) -> str:
-    normalized_objects_env_id = objects_env_id.strip()
-    if not normalized_objects_env_id:
-        raise ValueError("objects_env_id must not be empty.")
-
-    return normalized_objects_env_id
+from utils.robot_client import default_robot_client
+from utils.robot_schemas import SessionInfo
 
 
 def load_task_from_cli(argv: Sequence[str]) -> tuple[SourceTask, str]:
@@ -42,24 +35,25 @@ def load_task_from_cli(argv: Sequence[str]) -> tuple[SourceTask, str]:
 
     task_loader = TaskLoader()
     task = task_loader.load_from_cli(task_file=args.task_file, task_id=args.task_id)
-    objects_env_id = _normalize_objects_env_id(args.objects_env_id)
+    objects_env_id = args.objects_env_id.strip()
+    if not objects_env_id:
+        raise ValueError("objects_env_id must not be empty.")
+
     return task, objects_env_id
 
 
-def create_robot_client() -> RobotClient:
-    return default_robot_client
-
-
-# 整个llm决策流程的主函数，输入是一个SourceTask，最后会让远程执行模块执行这个任务
-def process(task: SourceTask, robot_client: RobotClient) -> ParsedTask:
-    task_parser: TaskParser = TaskParser.from_config()
-    parsed_task: ParsedTask = task_parser.parse_task(task)
-    print("Parsed Task:", parsed_task)
-    return parsed_task
+def run(task: SourceTask, session: SessionInfo) -> None:
+    try:
+        task_parser: TaskParser = TaskParser.from_config()
+        task_parser.parse_task(task)
+        default_robot_client.get_robot(session.session_id)
+        default_robot_client.get_cameras(session.session_id)
+    finally:
+        default_robot_client.close_session(session.session_id)
 
 
 if __name__ == "__main__":
-    new_task, objects_env_id = load_task_from_cli(sys.argv[1:])
-    # TODO：在后续 session 流程中，把 objects_env_id 传给 robot_client.create_session(...)
-    robot_client = create_robot_client()
-    process(new_task, robot_client)
+    task, objects_env_id = load_task_from_cli(sys.argv[1:])
+    session = default_robot_client.create_session(objects_env_id)
+
+    run(task, session)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 
 import pytest
 
@@ -107,6 +108,10 @@ def test_robot_schemas_parse_camera_depth_image_in_ext() -> None:
     assert response.cameras[0].rgb_image.artifact_id == "artifact_rgb_1"
     assert response.cameras[0].ext.depth_image is not None
     assert response.cameras[0].ext.depth_image.artifact_id == "artifact_depth_1"
+
+
+def test_robot_schema_module_alias_is_not_present() -> None:
+    assert importlib.util.find_spec("utils.robot_schema") is None
 
 
 def test_robot_client_create_session_posts_backend_and_environment(

@@ -167,15 +167,15 @@
 
 1. 通过 `task_loader` 从 HTTP 请求或命令行参数读取 YAML 任务内容
 2. 通过 CLI 必填参数 `--objects-env-id` 获取本次运行使用的环境 id
-3. 在进入 `process()` 之前，基于服务配置创建 `robot_client`
-4. 调用 `task_parser`，得到任务解析结果
-5. 通过 `robot_client` 请求 `robot_service`，传入 `backend_type` 和 `environment_id`，创建机器人 session 并获取 `session_id`
-6. 通过 `robot_client` 基于 `session_id` 获取当前帧对应的 camera 元数据和 artifact 引用，再下载 RGB 图、深度图等机器人侧观测数据
-7. 通过 `perception_client` 请求 `perception_service`，获取3D感知结果
-8. 通过 `pose_transformer` 把3D感知结果转换到世界坐标系
-9. 通过 `policy_model` 生成策略代码
-10. 通过 `policy_executor` 把 `ParsedTask`、感知数据和策略代码组装成 task record，并提交到 `POST /sessions/{session_id}/tasks`
-11. `robot_service` 在 robot 端执行对应 task record，并通过 session 下的 task 查询接口返回或持久化该记录的执行状态
+3. 在 `main.py` 中直接使用共享的 `default_robot_client`
+4. 通过 `robot_client` 请求 `robot_service`，传入 `backend_type` 和 `environment_id`，创建机器人 session 并获取 `session_id`
+5. 通过 `robot_client` 基于 `session_id` 获取 robot 状态、camera 元数据与 artifact 引用，并下载 RGB 图、深度图等机器人侧观测数据
+6. 调用 `task_parser`，得到任务解析结果
+7. 后续通过 `perception_client` 请求 `perception_service`，获取3D感知结果
+8. 后续通过 `pose_transformer` 把3D感知结果转换到世界坐标系
+9. 后续通过 `policy_model` 生成策略代码
+10. 后续通过 `policy_executor` 把 `ParsedTask`、感知数据和策略代码组装成 task record，并提交到 `POST /sessions/{session_id}/tasks`
+11. `main.py` 在当前一轮调用结束后关闭该 `session`
 
 这个过程中，`llm_decision_making` 只依赖外部协议，不依赖远端实现细节。
 
