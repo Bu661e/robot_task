@@ -8,3 +8,4 @@ tasks/**/.ipynb_checkpoints/
 todos/**/.ipynb_checkpoints/
 
 res/
+.worktrees/
