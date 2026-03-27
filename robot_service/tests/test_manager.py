@@ -1,0 +1,181 @@
+from __future__ import annotations
+
+import threading
+import time
+
+import pytest
+
+from robot_service.common.messages import WorkerEvent
+from robot_service.common.schemas import CreateSessionRequest, CreateTaskRequest, TaskContent
+from robot_service.runtime.settings import Settings
+from robot_service.api.manager import (
+    RobotServiceConflictError,
+    RobotServiceManager,
+)
+
+
+class FakeWorkerHandle:
+    def __init__(self) -> None:
+        self.commands = []
+        self._closed = False
+        self._run_task_started = threading.Event()
+        self._finish_run_task = threading.Event()
+        self._run_task_result = "task_succeeded"
+
+    def send(self, command, timeout_s: float) -> WorkerEvent:
+        self.commands.append(command)
+        if command.command_type == "load_environment":
+            return WorkerEvent(
+                request_id=command.request_id,
+                event_type="environment_loaded",
+                payload={"environment_id": command.payload["environment_id"]},
+            )
+        if command.command_type == "run_task":
+            self._run_task_started.set()
+            self._finish_run_task.wait(timeout=timeout_s)
+            return WorkerEvent(
+                request_id=command.request_id,
+                event_type=self._run_task_result,
+                payload={},
+            )
+        if command.command_type == "get_robot_status":
+            return WorkerEvent(
+                request_id=command.request_id,
+                event_type="robot_status",
+                payload={"robot_status": "ready", "timestamp": "2026-03-28T00:00:00Z"},
+            )
+        if command.command_type == "shutdown":
+            self._closed = True
+            return WorkerEvent(
+                request_id=command.request_id,
+                event_type="worker_ready",
+                payload={},
+            )
+        raise AssertionError(f"Unexpected command: {command.command_type}")
+
+    def close(self) -> None:
+        self._closed = True
+
+    def is_alive(self) -> bool:
+        return not self._closed
+
+    def finish_task(self, result: str = "task_succeeded") -> None:
+        self._run_task_result = result
+        self._finish_run_task.set()
+
+    def wait_for_task_start(self) -> None:
+        assert self._run_task_started.wait(timeout=1.0)
+
+
+def build_manager(handle: FakeWorkerHandle) -> RobotServiceManager:
+    settings = Settings(
+        robot_service_host="127.0.0.1",
+        robot_service_port=8000,
+        isaac_sim_root="/opt/isaacsim",
+        runs_dir="robot_service/runs",  # type: ignore[arg-type]
+        log_level="INFO",
+    )
+    return RobotServiceManager(
+        settings=settings,
+        worker_factory=lambda session_id, session_dir: handle,
+    )
+
+
+def wait_until(predicate, timeout: float = 1.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(0.01)
+    raise AssertionError("Condition was not met before timeout")
+
+
+def test_create_session_sends_environment_id_to_worker():
+    handle = FakeWorkerHandle()
+    manager = build_manager(handle)
+
+    session = manager.create_session(
+        CreateSessionRequest(backend_type="isaac_sim", environment_id="env-default")
+    )
+
+    assert session.session_status == "ready"
+    assert handle.commands[0].command_type == "load_environment"
+    assert handle.commands[0].payload["environment_id"] == "env-default"
+
+
+def test_create_session_rejects_second_active_session():
+    handle = FakeWorkerHandle()
+    manager = build_manager(handle)
+
+    manager.create_session(
+        CreateSessionRequest(backend_type="isaac_sim", environment_id="env-default")
+    )
+
+    with pytest.raises(RobotServiceConflictError):
+        manager.create_session(
+            CreateSessionRequest(backend_type="isaac_sim", environment_id="env-second")
+        )
+
+
+def test_create_task_runs_in_background_and_updates_to_succeeded():
+    handle = FakeWorkerHandle()
+    manager = build_manager(handle)
+    session = manager.create_session(
+        CreateSessionRequest(backend_type="isaac_sim", environment_id="env-default")
+    )
+
+    task = manager.create_task(
+        session.session_id,
+        CreateTaskRequest(
+            task=TaskContent(
+                task_id="task-1",
+                instruction="Pick up the cube",
+                object_texts=["cube"],
+            ),
+            policy_source="def run_policy(robot, perception_data):\n    return None",
+            perception_data={"objects": []},
+        ),
+    )
+
+    assert task.task_status == "queued"
+
+    handle.wait_for_task_start()
+    wait_until(
+        lambda: manager.get_task(session.session_id, task.session_task_id).task_status == "running"
+    )
+
+    handle.finish_task("task_succeeded")
+
+    wait_until(
+        lambda: manager.get_task(session.session_id, task.session_task_id).task_status == "succeeded"
+    )
+
+
+def test_delete_session_rejects_while_task_is_running():
+    handle = FakeWorkerHandle()
+    manager = build_manager(handle)
+    session = manager.create_session(
+        CreateSessionRequest(backend_type="isaac_sim", environment_id="env-default")
+    )
+    task = manager.create_task(
+        session.session_id,
+        CreateTaskRequest(
+            task=TaskContent(
+                task_id="task-1",
+                instruction="Pick up the cube",
+                object_texts=["cube"],
+            ),
+            policy_source="def run_policy(robot, perception_data):\n    return None",
+            perception_data={"objects": []},
+        ),
+    )
+
+    handle.wait_for_task_start()
+    wait_until(
+        lambda: manager.get_task(session.session_id, task.session_task_id).task_status == "running"
+    )
+
+    with pytest.raises(RobotServiceConflictError):
+        manager.delete_session(session.session_id)
+
+    handle.finish_task("task_succeeded")
