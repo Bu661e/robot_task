@@ -22,7 +22,7 @@ $ISAAC_SIM_ROOT/python.sh /path/to/your_script.py
 ### 2. 当前示例 `autorun.sh` 的启发
 
 仓库当前有一个示例脚本：
-- [exmaple/autorun.sh](/Users/haitong/Code_ws/robot_task/.worktrees/feature-robot-service/robot_service/exmaple/autorun.sh)
+- [examples/isaac_pick_place_demo/autorun.sh](/Users/haitong/Code_ws/robot_task/.worktrees/feature-robot-service/robot_service/examples/isaac_pick_place_demo/autorun.sh)
 
 这个脚本已经体现出一个重要思路：
 - 仓库里的任务脚本，不应该直接用系统 Python 启动
@@ -41,13 +41,12 @@ $ISAAC_SIM_ROOT/python.sh /path/to/your_script.py
 
 ### 3. 当前示例存在的问题
 
-当前 `exmaple/autorun.sh` 还不能直接作为正式方案使用，至少有以下问题：
+当前这个旧示例已经整理到 `robot_service/examples/isaac_pick_place_demo/`，作为参考材料保留，但它还不能直接作为正式方案使用，至少有以下问题：
 
-- `exmaple` 目录名本身疑似是 `example` 的拼写错误。
 - 脚本里用 `../..` 反推出 `ISAAC_SIM_ROOT`，但在当前仓库里这个路径会落到仓库根目录，而不是 Isaac Sim 安装目录。
 - 当前仓库中并不存在 `main_task_armpickplace.py`，所以这个示例脚本现在无法直接跑通。
 
-因此，这个示例更适合作为“启动方式参考”，不适合作为可直接复用的正式启动入口。
+因此，这个目录更适合作为“旧示例 / 启动方式参考”，不适合作为可直接复用的正式启动入口，也不属于当前最小服务骨架的一部分。
 
 ### 4. 对 `robot_service` 架构的直接启发
 
