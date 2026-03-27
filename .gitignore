@@ -9,3 +9,4 @@ todos/**/.ipynb_checkpoints/
 
 res/
 .worktrees/
+perception_service/SAM3D-object/
