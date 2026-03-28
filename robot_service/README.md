@@ -307,7 +307,7 @@ Isaac 内部返回: [w, x, y, z]
 
 ```bash
 ISAAC_SIM_ROOT=/root/isaacsim \
-ROBOT_SERVICE_HOST=127.0.0.1 \
+ROBOT_SERVICE_HOST=0.0.0.0 \
 ROBOT_SERVICE_PORT=18080 \
 RUNS_DIR=/root/robot_task/robot_service/runs \
 robot_service/scripts/start_api_server.sh
@@ -320,6 +320,16 @@ robot_service/scripts/start_api_server.sh
 - 当客户端后续调用 `POST /sessions` 时，API 才会按需拉起 Isaac worker。
 - 当前 worker 默认是无头启动，对应代码里的 `SimulationApp({"headless": True})`。
 - 因此，正常的协议联调应该始终用这条 API 启动命令，而不是用 GUI 脚本代替。
+- 截至 `2026-03-29`，当前云服务厂商已经把本机 `18080` 端口映射为以下公网入口：
+
+```text
+https://vsq4t8n3-wteq1vxp-18080.ahrestapi.gpufree.cn:8443
+```
+
+- 也就是说：
+  - 服务进程在云主机内部仍然监听 `0.0.0.0:18080`
+  - 外部客户端联调时，应优先使用上面的公网 HTTPS 地址，而不是直接猜测云主机内网 IP
+- 如果后续云厂商更换了端口映射或域名，需要同步更新本节。
 
 如果想直接看服务启动脚本本身，入口文件是：
 

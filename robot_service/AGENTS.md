@@ -12,6 +12,8 @@
 - 当前开发/联调路径已经确认：
   - API 服务通过 `uv run --project robot_service ...` 启动
   - Isaac worker 与 GUI 预览通过 Isaac Sim 安装目录下的 `python.sh` 启动
+- 当前对外联调时，还应默认提醒云厂商提供的公网映射地址：
+  - `https://vsq4t8n3-wteq1vxp-18080.ahrestapi.gpufree.cn:8443`
 - 更长期的部署编排方式后续仍可继续演进；如果发生变化，再单独更新本文档
 
 ## 文档
