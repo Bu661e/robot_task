@@ -340,7 +340,7 @@ task 执行通常不是瞬时完成的，因此每条 task 记录都应维护独
       },
       "extrinsics": {
         "translation": [0.0, 0.0, 6.0],
-        "quaternion_xyzw": [0.0, 0.7071, 0.0, 0.7071]
+        "quaternion_wxyz": [0.7071, 0.0, 0.7071, 0.0]
       },
       "ext": {
         "depth_unit": "meter",
@@ -368,7 +368,7 @@ task 执行通常不是瞬时完成的，因此每条 task 记录都应维护独
       },
       "extrinsics": {
         "translation": [0.0, 3.3, 3.3],
-        "quaternion_xyzw": [0.1830, 0.1830, -0.6830, 0.6830]
+        "quaternion_wxyz": [0.6830, 0.1830, 0.1830, -0.6830]
       },
       "ext": {
         "depth_unit": "meter",

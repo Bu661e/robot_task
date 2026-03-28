@@ -150,13 +150,13 @@ class CameraIntrinsics:
 @dataclass(slots=True)
 class CameraExtrinsics:
     translation: list[float]
-    quaternion_xyzw: list[float]
+    quaternion_wxyz: list[float]
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, object]) -> CameraExtrinsics:
         return cls(
             translation=_as_float_list(payload, "translation"),
-            quaternion_xyzw=_as_float_list(payload, "quaternion_xyzw"),
+            quaternion_wxyz=_as_float_list(payload, "quaternion_wxyz"),
         )
 
 

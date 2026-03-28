@@ -61,7 +61,7 @@ class FakeWorkerHandle:
                             },
                             "extrinsics": {
                                 "translation": [0.0, 0.0, 6.0],
-                                "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
+                                "quaternion_wxyz": [1.0, 0.0, 0.0, 0.0],
                             },
                             "ext": {"depth_encoding": "npy-float32"},
                         },
@@ -85,7 +85,7 @@ class FakeWorkerHandle:
                             },
                             "extrinsics": {
                                 "translation": [0.0, 3.3, 3.3],
-                                "quaternion_xyzw": [0.0, 0.5, -0.8660254, 0.0],
+                                "quaternion_wxyz": [0.0, 0.0, 0.5, -0.8660254],
                             },
                             "ext": {"depth_encoding": "npy-float32"},
                         }

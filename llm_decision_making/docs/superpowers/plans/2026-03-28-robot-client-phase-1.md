@@ -79,7 +79,7 @@ def test_camera_observation_response_parses_depth_image_in_ext() -> None:
                     },
                     "extrinsics": {
                         "translation": [0.0, 0.0, 1.0],
-                        "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
+                        "quaternion_wxyz": [1.0, 0.0, 0.0, 0.0],
                     },
                     "ext": {
                         "depth_image": {

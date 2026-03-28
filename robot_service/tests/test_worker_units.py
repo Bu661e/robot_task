@@ -120,7 +120,10 @@ def test_build_cameras_payload_returns_artifact_backed_depth_camera():
                     width=640,
                     height=640,
                 ),
-                extrinsics=CameraExtrinsics(translation=[0.0, 0.0, 6.0], quaternion_xyzw=[0.0, 0.0, 0.0, 1.0]),
+                extrinsics=CameraExtrinsics(
+                    translation=[0.0, 0.0, 6.0],
+                    quaternion_wxyz=[1.0, 0.0, 0.0, 0.0],
+                ),
                 ext={"depth_encoding": "npy-float32"},
             ),
             CameraPayload(
@@ -140,7 +143,7 @@ def test_build_cameras_payload_returns_artifact_backed_depth_camera():
                 ),
                 extrinsics=CameraExtrinsics(
                     translation=[0.0, 3.3, 3.3],
-                    quaternion_xyzw=[0.0, 0.5, -0.8660254, 0.0],
+                    quaternion_wxyz=[0.0, 0.0, 0.5, -0.8660254],
                 ),
                 ext={"depth_encoding": "npy-float32"},
             ),

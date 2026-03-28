@@ -240,11 +240,8 @@ class EnvironmentRuntime:
                     ),
                     extrinsics=CameraExtrinsics(
                         translation=[float(value) for value in camera_position.tolist()],
-                        quaternion_xyzw=[
-                            float(camera_orientation_wxyz[1]),
-                            float(camera_orientation_wxyz[2]),
-                            float(camera_orientation_wxyz[3]),
-                            float(camera_orientation_wxyz[0]),
+                        quaternion_wxyz=[
+                            float(value) for value in camera_orientation_wxyz.tolist()
                         ],
                     ),
                     ext={

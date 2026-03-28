@@ -72,7 +72,7 @@ class CameraIntrinsics(BaseSchema):
 
 class CameraExtrinsics(BaseSchema):
     translation: list[float]
-    quaternion_xyzw: list[float]
+    quaternion_wxyz: list[float]
 
 
 class CameraPayload(BaseSchema):

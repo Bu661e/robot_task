@@ -205,7 +205,7 @@ light.CreateIntensityAttr(650.0)
   - 机械臂对侧的俯视概览相机：位于 `(0, 3.3, 3.3)`，同时覆盖桌面和机械臂
   - 两个相机当前都输出 `640 x 640` 的正方形图像
   - 当前 overview 相机按 `USD/local pose` 写入固定欧拉角 `(-60, 0, -180)`，这样 Property 面板看到的值能和代码对齐
-  - 对外 `GET /sessions/{session_id}/cameras` 响应中的 `extrinsics.quaternion_xyzw` 固定按共享协议返回 `[x, y, z, w]`
+  - 对外 `GET /sessions/{session_id}/cameras` 响应中的 `extrinsics.quaternion_wxyz` 固定按共享协议返回 `[w, x, y, z]`
 - 当前会用到的调用：
   - `camera.initialize()`
   - `camera.add_distance_to_image_plane_to_frame()`
@@ -273,24 +273,23 @@ camera.set_local_pose(
 
 这里还有一个和客户端协议直接相关的固定约定，也必须明确记下来。
 
-- 共享协议 `docs/protocols/llm_decision_making__robot_service.md` 中，camera 外参字段名写的是 `quaternion_xyzw`。
-- 这表示对外 HTTP 响应里的四元数顺序固定是 `[x, y, z, w]`。
+- 共享协议 `docs/protocols/llm_decision_making__robot_service.md` 中，camera 外参字段名写的是 `quaternion_wxyz`。
+- 这表示对外 HTTP 响应里的四元数顺序固定是 `[w, x, y, z]`。
 - 当前 `robot_service` 的 Pydantic schema 也和这个协议保持一致。
 
 但 Isaac Sim / Isaac Core 侧要注意：
 
 - `camera.get_world_pose(camera_axes="world")` 返回的是标量在前的四元数，也就是 `[w, x, y, z]`。
-- 因此在 `worker/environment.py` 里组装 `/cameras` 响应时，不能把 Isaac 返回值原样透传。
-- 当前正确做法是先拿到 `camera_orientation_wxyz`，再转换成协议要求的 `quaternion_xyzw`。
+- 因此当前实现可以直接把 `camera_orientation_wxyz` 按协议写入 `quaternion_wxyz`，不再需要额外重排。
 
 也就是说，当前实现遵循的是：
 
 ```text
 Isaac 内部返回: [w, x, y, z]
-对外协议返回:  [x, y, z, w]
+对外协议返回:  [w, x, y, z]
 ```
 
-后续如果客户端、感知模块或调试脚本要读取这个字段，必须按 `xyzw` 去解释；如果某一侧内部库要求 `wxyz`，就在那里显式做一次转换，不要改共享协议字段含义。
+后续如果客户端、感知模块或调试脚本要读取这个字段，必须按 `wxyz` 去解释；如果某一侧内部库要求别的顺序，就在那里显式做一次转换，不要再修改共享协议字段含义。
 
 #### 6.5 当前云主机上的实现约定
 

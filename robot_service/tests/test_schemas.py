@@ -64,7 +64,7 @@ def test_camera_payload_requires_depth_image():
                 },
                 "extrinsics": {
                     "translation": [0.0, 0.0, 6.0],
-                    "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
+                    "quaternion_wxyz": [1.0, 0.0, 0.0, 0.0],
                 },
             }
         )

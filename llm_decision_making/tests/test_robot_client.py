@@ -117,7 +117,7 @@ def test_robot_schemas_parse_camera_depth_image_in_ext() -> None:
                     },
                     "extrinsics": {
                         "translation": [0.0, 0.0, 1.0],
-                        "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
+                        "quaternion_wxyz": [1.0, 0.0, 0.0, 0.0],
                     },
                     "ext": {
                         "depth_image": {
@@ -132,6 +132,7 @@ def test_robot_schemas_parse_camera_depth_image_in_ext() -> None:
     )
 
     assert response.cameras[0].rgb_image.artifact_id == "artifact_rgb_1"
+    assert response.cameras[0].extrinsics.quaternion_wxyz == [1.0, 0.0, 0.0, 0.0]
     assert response.cameras[0].ext.depth_image is not None
     assert response.cameras[0].ext.depth_image.artifact_id == "artifact_depth_1"
 
@@ -163,7 +164,7 @@ def test_robot_schemas_parse_camera_depth_image_at_top_level() -> None:
                     },
                     "extrinsics": {
                         "translation": [0.0, 0.0, 1.0],
-                        "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
+                        "quaternion_wxyz": [1.0, 0.0, 0.0, 0.0],
                     },
                     "ext": {},
                 }
@@ -173,6 +174,7 @@ def test_robot_schemas_parse_camera_depth_image_at_top_level() -> None:
     )
 
     assert response.cameras[0].rgb_image.artifact_id == "artifact_rgb_1"
+    assert response.cameras[0].extrinsics.quaternion_wxyz == [1.0, 0.0, 0.0, 0.0]
     assert response.cameras[0].ext.depth_image is not None
     assert response.cameras[0].ext.depth_image.artifact_id == "artifact_depth_1"
 
@@ -343,7 +345,7 @@ def test_robot_client_get_cameras(monkeypatch: pytest.MonkeyPatch) -> None:
                         },
                         "extrinsics": {
                             "translation": [0.0, 0.0, 1.0],
-                            "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
+                            "quaternion_wxyz": [1.0, 0.0, 0.0, 0.0],
                         },
                         "ext": {},
                     }
@@ -366,6 +368,7 @@ def test_robot_client_get_cameras(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert response.cameras[0].camera_id == "front"
     assert response.cameras[0].rgb_image.artifact_id == "artifact_rgb_1"
+    assert response.cameras[0].extrinsics.quaternion_wxyz == [1.0, 0.0, 0.0, 0.0]
     assert FakeHTTPXClient.instances[0].calls == [("GET", "/sessions/sess_1/cameras", None)]
 
 
