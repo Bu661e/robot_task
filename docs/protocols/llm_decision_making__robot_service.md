@@ -202,7 +202,7 @@ task 执行通常不是瞬时完成的，因此每条 task 记录都应维护独
 ```json
 {
   "backend_type": "isaac_sim",
-  "environment_id": "2-ycb",
+  "environment_id": "env-default",
   "ext": {}
 }
 ```
@@ -218,7 +218,7 @@ task 执行通常不是瞬时完成的，因此每条 task 记录都应维护独
   "session_id": "sess_isaac_sim_20260327153045_a1b2",
   "session_status": "ready",
   "backend_type": "isaac_sim",
-  "environment_id": "2-ycb",
+  "environment_id": "env-default",
   "ext": {}
 }
 ```
@@ -240,7 +240,7 @@ task 执行通常不是瞬时完成的，因此每条 task 记录都应维护独
   "session_id": "sess_isaac_sim_20260327153045_a1b2",
   "backend_type": "isaac_sim",
   "session_status": "ready",
-  "environment_id": "2-ycb",
+  "environment_id": "env-default",
   "ext": {}
 }
 ```
