@@ -12,8 +12,8 @@ _ROBOT_KEEP_OUT_Y_M = 0.18
 _SPAWN_Z_OFFSET_M = 0.02
 _MAX_SAMPLING_ATTEMPTS = 200
 
-_RED = (0.85, 0.12, 0.12)
-_BLUE = (0.12, 0.24, 0.85)
+_RED = (0.62, 0.06, 0.06)
+_BLUE = (0.06, 0.16, 0.62)
 
 
 def build_default_layout(*, rng: random.Random, context: TabletopLayoutContext) -> list[TabletopObjectSpec]:

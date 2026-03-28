@@ -53,15 +53,39 @@ class FakeWorkerHandle:
                             },
                             "intrinsics": {
                                 "fx": 500.0,
-                                "fy": 510.0,
+                                "fy": 500.0,
                                 "cx": 320.0,
-                                "cy": 240.0,
+                                "cy": 320.0,
                                 "width": 640,
-                                "height": 480,
+                                "height": 640,
                             },
                             "extrinsics": {
-                                "translation": [0.0, 0.0, 3.0],
+                                "translation": [0.0, 0.0, 6.0],
                                 "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
+                            },
+                            "ext": {"depth_encoding": "npy-float32"},
+                        },
+                        {
+                            "camera_id": "table_overview",
+                            "rgb_image": {
+                                "artifact_id": "artifact-rgb-overview",
+                                "content_type": "image/png",
+                            },
+                            "depth_image": {
+                                "artifact_id": "artifact-depth-overview",
+                                "content_type": "application/x-npy",
+                            },
+                            "intrinsics": {
+                                "fx": 505.0,
+                                "fy": 505.0,
+                                "cx": 320.0,
+                                "cy": 320.0,
+                                "width": 640,
+                                "height": 640,
+                            },
+                            "extrinsics": {
+                                "translation": [0.0, 1.8, 2.5],
+                                "quaternion_xyzw": [0.0, 0.5, -0.8660254, 0.0],
                             },
                             "ext": {"depth_encoding": "npy-float32"},
                         }
@@ -79,6 +103,20 @@ class FakeWorkerHandle:
                             "session_id": "sess-demo",
                             "content_type": "application/x-npy",
                             "file_path": "/tmp/artifact-depth.npy",
+                            "ext": {},
+                        },
+                        {
+                            "artifact_id": "artifact-rgb-overview",
+                            "session_id": "sess-demo",
+                            "content_type": "image/png",
+                            "file_path": "/tmp/artifact-rgb-overview.png",
+                            "ext": {},
+                        },
+                        {
+                            "artifact_id": "artifact-depth-overview",
+                            "session_id": "sess-demo",
+                            "content_type": "application/x-npy",
+                            "file_path": "/tmp/artifact-depth-overview.npy",
                             "ext": {},
                         },
                     ],
@@ -147,9 +185,16 @@ def test_get_robot_and_cameras_return_first_phase_payloads():
     assert robot_response.status_code == 200
     assert robot_response.json()["robot_status"] == "ready"
     assert cameras_response.status_code == 200
-    camera = cameras_response.json()["cameras"][0]
-    assert camera["camera_id"] == "table_top"
-    assert camera["depth_image"]["artifact_id"] == "artifact-depth"
+    cameras = cameras_response.json()["cameras"]
+    assert len(cameras) == 2
+    assert cameras[0]["camera_id"] == "table_top"
+    assert cameras[0]["depth_image"]["artifact_id"] == "artifact-depth"
+    assert cameras[0]["intrinsics"]["width"] == 640
+    assert cameras[0]["intrinsics"]["height"] == 640
+    assert cameras[1]["camera_id"] == "table_overview"
+    assert cameras[1]["depth_image"]["artifact_id"] == "artifact-depth-overview"
+    assert cameras[1]["intrinsics"]["width"] == 640
+    assert cameras[1]["intrinsics"]["height"] == 640
 
 
 def test_second_phase_routes_are_not_exposed_in_first_phase():

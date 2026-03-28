@@ -58,12 +58,12 @@ def test_camera_payload_requires_depth_image():
                     "fx": 500.0,
                     "fy": 500.0,
                     "cx": 320.0,
-                    "cy": 240.0,
+                    "cy": 320.0,
                     "width": 640,
-                    "height": 480,
+                    "height": 640,
                 },
                 "extrinsics": {
-                    "translation": [0.0, 0.0, 3.0],
+                    "translation": [0.0, 0.0, 6.0],
                     "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
                 },
             }

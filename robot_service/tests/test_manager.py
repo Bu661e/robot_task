@@ -68,15 +68,39 @@ class FakeWorkerHandle:
                             },
                             "intrinsics": {
                                 "fx": 500.0,
-                                "fy": 510.0,
+                                "fy": 500.0,
                                 "cx": 320.0,
-                                "cy": 240.0,
+                                "cy": 320.0,
                                 "width": 640,
-                                "height": 480,
+                                "height": 640,
                             },
                             "extrinsics": {
-                                "translation": [0.0, 0.0, 3.0],
+                                "translation": [0.0, 0.0, 6.0],
                                 "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
+                            },
+                            "ext": {"depth_encoding": "npy-float32"},
+                        },
+                        {
+                            "camera_id": "table_overview",
+                            "rgb_image": {
+                                "artifact_id": "artifact-rgb-overview",
+                                "content_type": "image/png",
+                            },
+                            "depth_image": {
+                                "artifact_id": "artifact-depth-overview",
+                                "content_type": "application/x-npy",
+                            },
+                            "intrinsics": {
+                                "fx": 505.0,
+                                "fy": 505.0,
+                                "cx": 320.0,
+                                "cy": 320.0,
+                                "width": 640,
+                                "height": 640,
+                            },
+                            "extrinsics": {
+                                "translation": [0.0, 1.8, 2.5],
+                                "quaternion_xyzw": [0.0, 0.5, -0.8660254, 0.0],
                             },
                             "ext": {"depth_encoding": "npy-float32"},
                         }
@@ -94,6 +118,20 @@ class FakeWorkerHandle:
                             "session_id": "sess-demo",
                             "content_type": "application/x-npy",
                             "file_path": "/tmp/artifact-depth.npy",
+                            "ext": {},
+                        },
+                        {
+                            "artifact_id": "artifact-rgb-overview",
+                            "session_id": "sess-demo",
+                            "content_type": "image/png",
+                            "file_path": "/tmp/artifact-rgb-overview.png",
+                            "ext": {},
+                        },
+                        {
+                            "artifact_id": "artifact-depth-overview",
+                            "session_id": "sess-demo",
+                            "content_type": "application/x-npy",
+                            "file_path": "/tmp/artifact-depth-overview.npy",
                             "ext": {},
                         },
                     ],
@@ -247,10 +285,13 @@ def test_get_cameras_registers_artifacts_in_manager_index():
 
     response = manager.get_cameras(session.session_id)
 
-    assert len(response.cameras) == 1
+    assert len(response.cameras) == 2
     assert response.cameras[0].depth_image.artifact_id == "artifact-depth"
+    assert response.cameras[1].depth_image.artifact_id == "artifact-depth-overview"
     assert manager.artifact_index["artifact-rgb"].content_type == "image/png"
     assert manager.artifact_index["artifact-depth"].content_type == "application/x-npy"
+    assert manager.artifact_index["artifact-rgb-overview"].content_type == "image/png"
+    assert manager.artifact_index["artifact-depth-overview"].content_type == "application/x-npy"
 
 
 def test_subprocess_worker_handle_skips_non_json_stdout_lines(monkeypatch, tmp_path):

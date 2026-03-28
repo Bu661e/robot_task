@@ -166,7 +166,7 @@ world.scene.add(
         position=np.array([0.0, 0.0, 1.57]),
         scale=np.array([0.1, 0.1, 0.1]),
         size=1.0,
-        color=np.array([0.85, 0.12, 0.12]),
+        color=np.array([0.62, 0.06, 0.06]),
     )
 )
 ```
@@ -180,7 +180,7 @@ world.scene.add(
     Franka(
         prim_path="/World/Franka",
         name="franka",
-        position=np.array([0.0, -0.48, 1.5]),
+        position=np.array([0.0, -0.6, 1.5]),
     )
 )
 ```
@@ -191,7 +191,7 @@ world.scene.add(
 from pxr import Sdf, UsdLux
 
 light = UsdLux.DistantLight.Define(stage, Sdf.Path("/World/KeyLight"))
-light.CreateIntensityAttr(500.0)
+light.CreateIntensityAttr(650.0)
 ```
 
 官方资料：
@@ -200,7 +200,11 @@ light.CreateIntensityAttr(500.0)
 
 #### 6.4 Camera 采集 API
 
-- 当前顶视相机使用 `from isaacsim.sensors.camera import Camera`
+- 当前基础环境里有两个相机：
+  - 顶视相机：位于 `(0, 0, 6.0)`，覆盖整个桌面，提供稳定的全局 RGB / depth
+  - 机械臂对侧的俯视概览相机：位于 `(0, 1.8, 2.5)`，同时覆盖桌面和机械臂
+  - 两个相机当前都输出 `640 x 640` 的正方形图像
+  - 当前 overview 相机按 `USD/local pose` 写入固定欧拉角 `(-60, 0, -180)`，这样 Property 面板看到的值能和代码对齐
 - 当前会用到的调用：
   - `camera.initialize()`
   - `camera.add_distance_to_image_plane_to_frame()`
@@ -213,6 +217,56 @@ light.CreateIntensityAttr(500.0)
 
 官方资料：
 - Camera API 参考：https://docs.isaacsim.omniverse.nvidia.com/latest/py/source/extensions/isaacsim.sensors.camera/docs/api.html
+- Rotations Utils 参考：https://docs.isaacsim.omniverse.nvidia.com/latest/py/source/extensions/isaacsim.core.utils/docs/index.html
+
+#### 6.4.1 Camera 姿态的已踩坑记录
+
+这次已经确认过一个很容易重复犯的错误，后面改 camera 时先看这里。
+
+- Isaac Sim 的 `Camera.set_world_pose(..., camera_axes="world")` / `Camera.get_world_pose(..., camera_axes="world")` 用的是 Isaac 的 camera axes 约定。
+- GUI 的 Property 面板里看到的 `Translate / Rotate`，显示的是 USD camera prim 本地 transform 的分解结果。
+- 这两个约定不是一回事，所以“代码里写的欧拉角”和“GUI 里看到的欧拉角”不一定一致。
+
+这次实际踩到的问题是：
+
+- `table_overview` 目标姿态希望在 Property 面板中直接看到 `(-60, 0, -180)`。
+- 如果直接写：
+
+```python
+rot_utils.euler_angles_to_quats(
+    np.array([-60.0, 0.0, -180.0]),
+    degrees=True,
+)
+```
+
+- 由于 `euler_angles_to_quats(...)` 默认是 `extrinsic=True`，最后 GUI Property 面板会显示成 `(60, 0, -180)`，看起来像是 X 轴符号反了。
+
+当前确认可用、且应当固定遵守的写法是：
+
+```python
+orientation = rot_utils.euler_angles_to_quats(
+    np.array([-60.0, 0.0, -180.0]),
+    degrees=True,
+    extrinsic=False,
+)
+
+camera.set_local_pose(
+    translation=np.array([0.0, 1.8, 2.5]),
+    orientation=orientation,
+    camera_axes="usd",
+)
+```
+
+原因是：
+
+- `extrinsic=False` 对应这里需要的 USD intrinsic XYZ 欧拉角解释。
+- `camera_axes="usd"` + `set_local_pose(...)` 才是在直接给 USD camera prim 写本地姿态。
+- 这样启动后，Isaac Sim GUI 的 Property 面板才能直接看到 `Rotate XYZ = (-60, 0, -180)`。
+
+后续如果又要调整 camera 姿态，先区分清楚你要的是哪一种结果：
+
+- 如果目标是“API 返回的世界位姿正确”，优先检查 `get_world_pose(camera_axes="world")`。
+- 如果目标是“GUI Property 面板里直接显示某组欧拉角”，必须按 USD/local pose 的方式去写，不要直接套 `world` camera axes 的默认欧拉角转换。
 
 #### 6.5 当前云主机上的实现约定
 
@@ -372,9 +426,10 @@ robot_service/
   - light
   - table
   - franka
-  - top camera
+  - table_top camera
+  - table_overview camera
 - 根据 `environment_id` 调用对应桌面环境文件并加载桌面物体
-- 采集顶视相机的 RGB / depth，并把它们落成 artifact
+- 采集两个相机的 RGB / depth，并把它们落成 artifact
 
 当前代码里已先实现：
 - 接收并保存 `environment_id`
@@ -384,12 +439,14 @@ robot_service/
   - `light`
   - `1.5m x 1.5m x 1.5m` 立方体桌子
   - 放在桌子一侧中间的 Franka
-  - 离地 `3m` 的顶视相机
+  - 离地 `6m` 的顶视相机
+  - 位于机械臂对侧、同时覆盖桌面和机械臂的概览相机
 - 默认桌面环境 `env-default`
   - `2` 个红色方块
   - `2` 个蓝色方块
   - 尺寸约 `10cm`
   - 随机且避免明显重叠的桌面摆放
+  - 使用更深的红蓝配色，避免在较弱光照下和桌面颜色过于接近
 
 #### `worker/tabletop_layouts/`
 
@@ -409,7 +466,7 @@ robot_service/
 
 当前代码里：
 - `robot_status` 返回占位 `ready`
-- `cameras` 会返回真实顶视相机的：
+- `cameras` 会返回真实双相机的：
   - `rgb_image`
   - `depth_image`
   - intrinsics
@@ -506,7 +563,7 @@ robot_service/
 - `environment_id` 从 HTTP 接口传到 worker
 - PTY + JSON line 的 worker IPC
 - 基础环境与桌面环境拆分
-- 默认基础环境：`ground`、`light`、`table`、`franka`、`top camera`
+- 默认基础环境：`ground`、`light`、`table`、`franka`、`table_top camera`、`table_overview camera`
 - 默认桌面环境：`env-default` 的 `2` 红 `2` 蓝方块
 - 真实相机 artifact 输出：
   - RGB -> `image/png`
