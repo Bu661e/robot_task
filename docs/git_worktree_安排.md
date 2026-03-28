@@ -72,6 +72,12 @@ git worktree list
 6. 将该模块分支合回 `main`。
 7. 如需发布，再推送 `main`。
 
+这里补充一个术语约定：
+
+- `commit` / “提交” 指提交到本地仓库
+- `push` / “推送” 默认指推送到远程仓库 `origin`
+- 如果文档中写“推送 `main`”，默认含义就是执行类似 `git push origin main` 的命令，而不是仅停留在本地
+
 图上通常会呈现为：
 
 ```text
@@ -204,7 +210,14 @@ git checkout main
 git fetch origin
 git merge --ff-only origin/main
 git merge --no-ff feature/<module-branch>
+git push origin main
 ```
+
+说明：
+
+- 本地 `commit` 完成后，变更只进入本地仓库
+- 只有执行 `git push origin <branch>` 后，远程仓库才会更新
+- 本文档中凡是出现“推送”，若无特别说明，默认都是推送到远程仓库
 
 如果当前需求同时改动多个模块，推荐先从 `main` 新建一个临时 integration 分支，把多个模块分支先合进去验证，再把 integration 分支合回 `main`。
 
