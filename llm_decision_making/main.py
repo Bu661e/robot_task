@@ -5,19 +5,13 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
-from config.main_config import DEFAULT_TASK_FILE
+from config.main_config import DEFAULT_OBJECTS_ENV_ID, DEFAULT_TASK_FILE
 from modules.schemas import ParsedTask, SourceTask
 from modules.task_parser import TaskParser
 from modules.task_loader import TaskLoader
-from utils.robot_client import RobotClient
-
-
-def _normalize_objects_env_id(objects_env_id: str) -> str:
-    normalized_objects_env_id = objects_env_id.strip()
-    if not normalized_objects_env_id:
-        raise ValueError("objects_env_id must not be empty.")
-
-    return normalized_objects_env_id
+from utils.robot_client import default_robot_client
+from utils.run_logging import clear_active_run_logger, get_active_run_logger, start_run_logging
+from utils.robot_schemas import SessionInfo
 
 
 def load_task_from_cli(argv: Sequence[str]) -> tuple[SourceTask, str]:
@@ -35,26 +29,70 @@ def load_task_from_cli(argv: Sequence[str]) -> tuple[SourceTask, str]:
     )
     parser.add_argument(
         "--objects-env-id",
-        required=True,
+        default=DEFAULT_OBJECTS_ENV_ID,
         help="Environment identifier used to initialize the robot client.",
     )
     args = parser.parse_args(argv)
 
     task_loader = TaskLoader()
     task = task_loader.load_from_cli(task_file=args.task_file, task_id=args.task_id)
-    objects_env_id = _normalize_objects_env_id(args.objects_env_id)
+    objects_env_id = args.objects_env_id.strip()
+    if not objects_env_id:
+        raise ValueError("objects_env_id must not be empty.")
+
     return task, objects_env_id
 
-# 整个llm决策流程的主函数，输入是一个SourceTask，最后会让远程执行模块执行这个任务
-def process(task: SourceTask, robot_client: RobotClient) -> ParsedTask:
-    task_parser: TaskParser = TaskParser.from_config()
-    parsed_task: ParsedTask = task_parser.parse_task(task)
-    print("Parsed Task:", parsed_task)
-    return parsed_task
+
+def run(task: SourceTask, session: SessionInfo) -> None:
+    try:
+        run_logger = get_active_run_logger()
+        if run_logger is not None:
+            run_logger.log_data_flow(
+                module="main",
+                event="task_input",
+                payload=task,
+                summary=f"task_id={task.task_id}",
+            )
+            run_logger.log_data_flow(
+                module="main",
+                event="session_input",
+                payload=session,
+                summary=f"session_id={session.session_id}",
+            )
+
+        task_parser: TaskParser = TaskParser.from_config()
+        parsed_task: ParsedTask = task_parser.parse_task(task)
+        if run_logger is not None:
+            run_logger.log_data_flow(
+                module="task_parser",
+                event="task_parsed",
+                payload=parsed_task,
+                summary=f"task_id={parsed_task.task_id} objects={','.join(parsed_task.object_texts)}",
+            )
+
+        default_robot_client.get_robot(session.session_id)
+        default_robot_client.get_cameras(session.session_id)
+    finally:
+        default_robot_client.close_session(session.session_id)
 
 
 if __name__ == "__main__":
-    new_task, objects_env_id = load_task_from_cli(sys.argv[1:])
-    # TODO：使用 objects_env_id 创建 robot_client，这部分不在本次改动中实现
-    robot_client = RobotClient()  # Replace with actual robot client initialization
-    process(new_task, robot_client)
+    task, objects_env_id = load_task_from_cli(sys.argv[1:])
+    start_run_logging(task.task_id)
+    try:
+        run_logger = get_active_run_logger()
+        if run_logger is not None:
+            run_logger.log_data_flow(
+                module="main",
+                event="task_loaded",
+                payload={
+                    "task": task,
+                    "objects_env_id": objects_env_id,
+                },
+                summary=f"task_id={task.task_id} objects_env_id={objects_env_id}",
+            )
+
+        session = default_robot_client.create_session(objects_env_id)
+        run(task, session)
+    finally:
+        clear_active_run_logger()
