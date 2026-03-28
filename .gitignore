@@ -12,3 +12,4 @@ todos/**/.ipynb_checkpoints/
 res/
 .worktrees/
 robot_service/runs/
+perception_service/SAM3D-object/

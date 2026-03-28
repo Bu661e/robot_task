@@ -73,6 +73,7 @@
 当前已存在的协议文档包括：
 
 - `docs/protocols/llm_decision_making__robot_service.md`
+- `docs/protocols/llm_decision_making__perception_service.md`
 
 ## 开发方式
 
@@ -90,4 +91,3 @@
 - 先确认自己当前在哪个 worktree 和工作目录
 - 一个功能分支只修改本模块相关代码和必要的共享文档
 - 合并前先同步最新 `main`
-
