@@ -1,0 +1,10 @@
+# Local credentials and model artifacts
+.env
+.env.*
+checkpoints/
+weights/
+outputs/
+*.pt
+*.pth
+*.bin
+*.safetensors

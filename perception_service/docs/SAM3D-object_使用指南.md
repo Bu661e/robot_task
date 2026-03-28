@@ -74,7 +74,7 @@
 1. 加载 `checkpoints/hf/pipeline.yaml`
 2. 通过 Hydra 实例化 `InferencePipelinePointMap`
 3. 输入 RGB 图 + 单物体 mask
-4. 如果没有外部 `pointmap`，就先跑内部深度/点图模型
+4. 在当前项目里由 `perception_service` 基于 `depth + camera_intrinsics` 先生成 `pointmap`
 5. 做 sparse structure 采样和 SLAT 解码
 6. 输出 Gaussian / mesh / GLB / pose 等结果
 
@@ -264,8 +264,8 @@ output = inference(image, mask, seed=42, pointmap=None)
   - 控制采样随机性
 - `pointmap`
   - 可选
-  - 如果传了外部点图，仓库会优先使用它
-  - 如果不传，就会调用内部深度/点图模型
+  - 对上游仓库本身来说可以直接传
+  - 但在当前项目里，这个参数应由 `perception_service` 内部准备，不对决策协议暴露
 
 有一个很容易踩坑的点：
 
@@ -302,8 +302,10 @@ output = inference(image, mask, seed=42, pointmap=None)
 
 对我们的 `perception_service` 来说，这意味着：
 
-- 如果 `robot_service` 或别的上游已经给了可靠深度/点云/点图
-  - 优先把它传给 `SAM3D-object`
+- 当前项目里更合理的做法是：
+  - 让 `llm_decision_making` 只上传 RGB、深度图和相机内参
+  - 由 `perception_service` 内部把深度图转换成 `pointmap`
+  - 再把这个内部 `pointmap` 传给 `SAM3D-object`
 - 不要默认让 `SAM3D-object` 自己从 RGB 估计
   - 这样对机器人坐标系和实际尺度更友好
 
@@ -386,11 +388,12 @@ scene_gs = make_scene(*outputs)
 
 建议链路如下：
 
-1. 输入原始 RGB 图、深度图/点图、任务文本
+1. 输入原始 RGB 图、深度图、相机内参、任务文本
 2. 用 `ultralytics` 的 SAM3 找到 2D mask
-3. 对每个 mask 单独调用 `SAM3D-object`
-4. 提取并标准化 3D 输出
-5. 组装成 `perception_service` 自己的响应 schema
+3. 在感知层内部把深度图转换成 `pointmap`
+4. 对每个 mask 单独调用 `SAM3D-object`
+5. 提取并标准化 3D 输出
+6. 组装成 `perception_service` 自己的响应 schema
 
 ### 10.2 服务层推荐保留的映射
 
@@ -427,9 +430,11 @@ scene_gs = make_scene(*outputs)
 - 明确输入是：
   - RGB
   - mask
-  - depth/pointmap
+  - depth
+  - camera_intrinsics
   - label
   - seed
+- 在适配层内部生成 `pointmap`
 - 明确输出是结构化响应，而不是 notebook 对象
 
 ### 10.4 和我们任务的直接关系

@@ -8,6 +8,9 @@
   - 从 GitHub 克隆的 `facebookresearch/sam-3d-objects` 代码快照
   - 本地保留、Git 忽略，不纳入当前仓库版本管理
   - 当前本地快照提交：`81a8237`
+- `sam3-ultralytics/`
+  - 放当前仓库里基于 `ultralytics` 使用 SAM3 模型的脚本、适配层和配置
+  - 本地模型权重与权限相关文件单独保留，不直接提交到主仓库
 - `docs/SAM3D-object_使用指南.md`
   - 说明 `SAM3D-object` 仓库怎么安装、推理、看输出，以及怎样接到本仓库的 `perception_service`
 - `docs/ultralytics_SAM3_使用指南.md`
