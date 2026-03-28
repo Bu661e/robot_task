@@ -1,6 +1,8 @@
 .DS_Store
 __pycache__/
 *.pyc
+.pytest_cache/
+.venv/
 
 .ipynb_checkpoints/
 src/**/.ipynb_checkpoints/
@@ -9,3 +11,4 @@ todos/**/.ipynb_checkpoints/
 
 res/
 .worktrees/
+robot_service/runs/
