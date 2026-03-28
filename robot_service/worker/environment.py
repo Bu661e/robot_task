@@ -2,6 +2,34 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import random
+from typing import Any
+
+from robot_service.common.schemas import (
+    ArtifactRecord,
+    ArtifactRef,
+    CameraExtrinsics,
+    CameraIntrinsics,
+    CameraPayload,
+)
+from robot_service.runtime.ids import new_artifact_id
+from robot_service.runtime.paths import get_artifact_path
+from robot_service.worker.tabletop_layouts import TabletopLayoutContext, load_tabletop_layout
+
+
+_TABLE_SIZE_M = 1.5
+_TABLE_HALF_SIZE_M = _TABLE_SIZE_M / 2.0
+_TABLE_TOP_Z_M = _TABLE_SIZE_M
+_TABLE_CENTER_Z_M = _TABLE_SIZE_M / 2.0
+_ROBOT_BASE_Y_M = -0.48
+_ROBOT_BASE_Z_M = _TABLE_TOP_Z_M
+_CAMERA_HEIGHT_M = 3.0
+_CAMERA_RESOLUTION = (640, 480)
+_CAMERA_ID = "table_top"
+_CAMERA_PRIM_PATH = "/World/Cameras/TableTopCamera"
+_CAMERA_HORIZONTAL_APERTURE_M = 0.024
+_CAMERA_FOCAL_LENGTH_M = 0.020
+_SCENE_WARMUP_STEPS = 8
 
 
 @dataclass
@@ -11,53 +39,207 @@ class EnvironmentRuntime:
     current_environment_id: str | None = None
     scene_assets: list[str] = field(default_factory=list)
     world: object | None = None
+    camera: object | None = None
+    robot: object | None = None
+    table: object | None = None
+    tabletop_object_ids: list[str] = field(default_factory=list)
 
     def load_environment(self, environment_id: str) -> None:
         if self.simulation_app is None:
-            self._load_placeholder_scene()
+            self._load_placeholder_scene(environment_id)
         else:
             self._load_isaac_scene(environment_id)
         self.current_environment_id = environment_id
 
-    def _load_placeholder_scene(self) -> None:
+    def _load_placeholder_scene(self, environment_id: str) -> None:
+        layout = load_tabletop_layout(
+            environment_id,
+            rng=random.Random(),
+            context=TabletopLayoutContext(table_size_m=_TABLE_SIZE_M, table_top_z_m=_TABLE_TOP_Z_M),
+        )
         self.world = None
-        self.scene_assets = ["ground", "light", "block"]
+        self.camera = None
+        self.robot = None
+        self.table = None
+        self.tabletop_object_ids = [spec.object_id for spec in layout]
+        self.scene_assets = self._build_scene_assets(self.tabletop_object_ids)
 
     def _load_isaac_scene(self, environment_id: str) -> None:
-        del environment_id  # Environment presets are still a follow-up; cloud bring-up uses one minimal scene.
-
+        import isaacsim.core.utils.numpy.rotations as rot_utils
         import numpy as np
-        from isaacsim.core.api.objects import DynamicCuboid
+        from isaacsim.core.api.objects import DynamicCuboid, FixedCuboid
         from isaacsim.core.api.world import World
         from isaacsim.core.utils.stage import create_new_stage, get_current_stage
+        from isaacsim.robot.manipulators.examples.franka import Franka
+        from isaacsim.sensors.camera import Camera
         from pxr import Sdf, UsdLux
+
+        layout = load_tabletop_layout(
+            environment_id,
+            rng=random.Random(),
+            context=TabletopLayoutContext(table_size_m=_TABLE_SIZE_M, table_top_z_m=_TABLE_TOP_Z_M),
+        )
 
         World.clear_instance()
         create_new_stage()
         world = World(stage_units_in_meters=1.0)
+        camera = None
         try:
             world.scene.add_default_ground_plane()
 
             stage = get_current_stage()
-            light = UsdLux.DistantLight.Define(stage, Sdf.Path("/World/KeyLight"))
-            light.CreateIntensityAttr(500.0)
+            key_light = UsdLux.DistantLight.Define(stage, Sdf.Path("/World/Lights/KeyLight"))
+            key_light.CreateIntensityAttr(1200.0)
 
-            world.scene.add(
-                DynamicCuboid(
-                    prim_path="/World/Block",
-                    name="block",
-                    position=np.array([0.0, 0.0, 0.1]),
-                    size=0.2,
-                    color=np.array([0.2, 0.6, 0.9]),
+            table = world.scene.add(
+                FixedCuboid(
+                    prim_path="/World/Furniture/Table",
+                    name="table",
+                    position=np.array([0.0, 0.0, _TABLE_CENTER_Z_M]),
+                    scale=np.array([_TABLE_SIZE_M, _TABLE_SIZE_M, _TABLE_SIZE_M]),
+                    size=1.0,
+                    color=np.array([0.56, 0.46, 0.36]),
                 )
             )
+            robot = world.scene.add(
+                Franka(
+                    prim_path="/World/Franka",
+                    name="franka",
+                    position=np.array([0.0, _ROBOT_BASE_Y_M, _ROBOT_BASE_Z_M]),
+                    orientation=rot_utils.euler_angles_to_quats(np.array([0.0, 0.0, 90.0]), degrees=True),
+                )
+            )
+
+            tabletop_object_ids: list[str] = []
+            for spec in layout:
+                world.scene.add(
+                    DynamicCuboid(
+                        prim_path=f"/World/Tabletop/{spec.object_id}",
+                        name=spec.object_id,
+                        position=np.array(spec.position_xyz),
+                        scale=np.array([spec.size_m, spec.size_m, spec.size_m]),
+                        size=1.0,
+                        color=np.array(spec.color_rgb),
+                    )
+                )
+                tabletop_object_ids.append(spec.object_id)
+
+            camera = world.scene.add(
+                Camera(
+                    prim_path=_CAMERA_PRIM_PATH,
+                    name=_CAMERA_ID,
+                    position=np.array([0.0, 0.0, _CAMERA_HEIGHT_M]),
+                    orientation=rot_utils.euler_angles_to_quats(np.array([0.0, 90.0, 0.0]), degrees=True),
+                    resolution=_CAMERA_RESOLUTION,
+                )
+            )
+
             world.reset()
+            camera.initialize()
+            camera.set_lens_aperture(0.0)
+            camera.set_horizontal_aperture(_CAMERA_HORIZONTAL_APERTURE_M)
+            camera.set_focal_length(_CAMERA_FOCAL_LENGTH_M)
+            camera.add_distance_to_image_plane_to_frame()
+            camera.resume()
+            self._step_render_frames(world, _SCENE_WARMUP_STEPS)
         except Exception:
             World.clear_instance()
             raise
 
         self.world = world
-        self.scene_assets = ["ground", "light", "block"]
+        self.camera = camera
+        self.robot = robot
+        self.table = table
+        self.tabletop_object_ids = [spec.object_id for spec in layout]
+        self.scene_assets = self._build_scene_assets(self.tabletop_object_ids)
+
+    def capture_camera_payloads(self, session_id: str) -> tuple[list[CameraPayload], list[ArtifactRecord], dict[str, Any]]:
+        if self.camera is None or self.world is None or self.session_dir is None:
+            return [], [], {"environment_id": self.current_environment_id, "note": "Placeholder camera payload"}
+
+        import numpy as np
+
+        self._step_render_frames(self.world, _SCENE_WARMUP_STEPS)
+
+        rgba = np.asarray(self.camera.get_rgba(), dtype=np.uint8)
+        current_frame = self.camera.get_current_frame(clone=True)
+        depth = current_frame.get("distance_to_image_plane")
+        if depth is None:
+            raise RuntimeError("Camera depth annotator did not return distance_to_image_plane data.")
+        depth_image = np.asarray(depth, dtype=np.float32)
+
+        rgb_artifact = self._write_rgb_artifact(session_id, rgba)
+        depth_artifact = self._write_depth_artifact(session_id, depth_image)
+
+        intrinsics_matrix = np.asarray(self.camera.get_intrinsics_matrix(), dtype=float)
+        camera_position, camera_orientation_wxyz = self.camera.get_world_pose(camera_axes="world")
+        width, height = self.camera.get_resolution()
+        payload = CameraPayload(
+            camera_id=_CAMERA_ID,
+            rgb_image=ArtifactRef(artifact_id=rgb_artifact.artifact_id, content_type=rgb_artifact.content_type),
+            depth_image=ArtifactRef(artifact_id=depth_artifact.artifact_id, content_type=depth_artifact.content_type),
+            intrinsics=CameraIntrinsics(
+                fx=float(intrinsics_matrix[0, 0]),
+                fy=float(intrinsics_matrix[1, 1]),
+                cx=float(intrinsics_matrix[0, 2]),
+                cy=float(intrinsics_matrix[1, 2]),
+                width=int(width),
+                height=int(height),
+            ),
+            extrinsics=CameraExtrinsics(
+                translation=[float(value) for value in camera_position.tolist()],
+                quaternion_xyzw=[
+                    float(camera_orientation_wxyz[1]),
+                    float(camera_orientation_wxyz[2]),
+                    float(camera_orientation_wxyz[3]),
+                    float(camera_orientation_wxyz[0]),
+                ],
+            ),
+            ext={
+                "camera_prim_path": _CAMERA_PRIM_PATH,
+                "depth_unit": "meter",
+                "depth_encoding": "npy-float32",
+            },
+        )
+        return [payload], [rgb_artifact, depth_artifact], {"environment_id": self.current_environment_id}
+
+    @staticmethod
+    def _step_render_frames(world: object, num_frames: int) -> None:
+        for _ in range(num_frames):
+            world.step(render=True)
+
+    def _write_rgb_artifact(self, session_id: str, rgba_image) -> ArtifactRecord:
+        from PIL import Image
+
+        artifact_id = new_artifact_id("rgb", session_id)
+        artifact_path = get_artifact_path(self.session_dir, artifact_id, ".png")
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        rgb_image = rgba_image[:, :, :3] if rgba_image.shape[-1] == 4 else rgba_image
+        Image.fromarray(rgb_image, mode="RGB").save(artifact_path)
+        return ArtifactRecord(
+            artifact_id=artifact_id,
+            session_id=session_id,
+            content_type="image/png",
+            file_path=str(artifact_path),
+        )
+
+    def _write_depth_artifact(self, session_id: str, depth_image) -> ArtifactRecord:
+        import numpy as np
+
+        artifact_id = new_artifact_id("depth", session_id)
+        artifact_path = get_artifact_path(self.session_dir, artifact_id, ".npy")
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        np.save(artifact_path, depth_image.astype(np.float32, copy=False))
+        return ArtifactRecord(
+            artifact_id=artifact_id,
+            session_id=session_id,
+            content_type="application/x-npy",
+            file_path=str(artifact_path),
+        )
+
+    @staticmethod
+    def _build_scene_assets(tabletop_object_ids: list[str]) -> list[str]:
+        return ["ground", "light", "table", "franka", "camera", *tabletop_object_ids]
 
     @property
     def robot_status(self) -> str:

@@ -2,7 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from robot_service.common.messages import WorkerCommand, WorkerEvent
-from robot_service.common.schemas import CreateSessionRequest, CreateTaskRequest, TaskContent
+from robot_service.common.schemas import CameraPayload, CreateSessionRequest, CreateTaskRequest, TaskContent
 
 
 def test_create_session_request_strips_environment_id_and_defaults_ext():
@@ -46,3 +46,25 @@ def test_worker_command_and_event_support_json_roundtrip():
 
     assert WorkerCommand.model_validate_json(command.model_dump_json()) == command
     assert WorkerEvent.model_validate_json(event.model_dump_json()) == event
+
+
+def test_camera_payload_requires_depth_image():
+    with pytest.raises(ValidationError):
+        CameraPayload.model_validate(
+            {
+                "camera_id": "table_top",
+                "rgb_image": {"artifact_id": "artifact-rgb", "content_type": "image/png"},
+                "intrinsics": {
+                    "fx": 500.0,
+                    "fy": 500.0,
+                    "cx": 320.0,
+                    "cy": 240.0,
+                    "width": 640,
+                    "height": 480,
+                },
+                "extrinsics": {
+                    "translation": [0.0, 0.0, 3.0],
+                    "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
+                },
+            }
+        )

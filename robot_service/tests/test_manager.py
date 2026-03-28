@@ -49,6 +49,57 @@ class FakeWorkerHandle:
                 event_type="robot_status",
                 payload={"robot_status": "ready", "timestamp": "2026-03-28T00:00:00Z"},
             )
+        if command.command_type == "get_cameras":
+            return WorkerEvent(
+                request_id=command.request_id,
+                event_type="cameras_payload",
+                payload={
+                    "timestamp": "2026-03-28T00:00:01Z",
+                    "cameras": [
+                        {
+                            "camera_id": "table_top",
+                            "rgb_image": {
+                                "artifact_id": "artifact-rgb",
+                                "content_type": "image/png",
+                            },
+                            "depth_image": {
+                                "artifact_id": "artifact-depth",
+                                "content_type": "application/x-npy",
+                            },
+                            "intrinsics": {
+                                "fx": 500.0,
+                                "fy": 510.0,
+                                "cx": 320.0,
+                                "cy": 240.0,
+                                "width": 640,
+                                "height": 480,
+                            },
+                            "extrinsics": {
+                                "translation": [0.0, 0.0, 3.0],
+                                "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
+                            },
+                            "ext": {"depth_encoding": "npy-float32"},
+                        }
+                    ],
+                    "artifact_records": [
+                        {
+                            "artifact_id": "artifact-rgb",
+                            "session_id": "sess-demo",
+                            "content_type": "image/png",
+                            "file_path": "/tmp/artifact-rgb.png",
+                            "ext": {},
+                        },
+                        {
+                            "artifact_id": "artifact-depth",
+                            "session_id": "sess-demo",
+                            "content_type": "application/x-npy",
+                            "file_path": "/tmp/artifact-depth.npy",
+                            "ext": {},
+                        },
+                    ],
+                    "ext": {"environment_id": "env-default"},
+                },
+            )
         if command.command_type == "shutdown":
             self._closed = True
             return WorkerEvent(
@@ -185,6 +236,21 @@ def test_delete_session_rejects_while_task_is_running():
         manager.delete_session(session.session_id)
 
     handle.finish_task("task_succeeded")
+
+
+def test_get_cameras_registers_artifacts_in_manager_index():
+    handle = FakeWorkerHandle()
+    manager = build_manager(handle)
+    session = manager.create_session(
+        CreateSessionRequest(backend_type="isaac_sim", environment_id="env-default")
+    )
+
+    response = manager.get_cameras(session.session_id)
+
+    assert len(response.cameras) == 1
+    assert response.cameras[0].depth_image.artifact_id == "artifact-depth"
+    assert manager.artifact_index["artifact-rgb"].content_type == "image/png"
+    assert manager.artifact_index["artifact-depth"].content_type == "application/x-npy"
 
 
 def test_subprocess_worker_handle_skips_non_json_stdout_lines(monkeypatch, tmp_path):

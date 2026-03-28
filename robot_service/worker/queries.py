@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from robot_service.common.schemas import ActionApisResponse, CamerasResponse, RobotStatusResponse
+from robot_service.common.schemas import ActionApisResponse, ArtifactRecord, CamerasResponse, RobotStatusResponse
 from robot_service.worker.environment import EnvironmentRuntime
 
 
@@ -19,13 +19,14 @@ def build_robot_status(session_id: str, runtime: EnvironmentRuntime) -> RobotSta
     )
 
 
-def build_cameras_payload(session_id: str, runtime: EnvironmentRuntime) -> CamerasResponse:
+def build_cameras_payload(session_id: str, runtime: EnvironmentRuntime) -> tuple[CamerasResponse, list[ArtifactRecord]]:
+    cameras, artifact_records, ext = runtime.capture_camera_payloads(session_id)
     return CamerasResponse(
         session_id=session_id,
         timestamp=_utc_iso(),
-        cameras=[],
-        ext={"environment_id": runtime.current_environment_id, "note": "Placeholder camera payload"},
-    )
+        cameras=cameras,
+        ext=ext,
+    ), artifact_records
 
 
 def build_action_apis_payload(session_id: str, runtime: EnvironmentRuntime) -> ActionApisResponse:
@@ -34,4 +35,3 @@ def build_action_apis_payload(session_id: str, runtime: EnvironmentRuntime) -> A
         action_apis=runtime.action_apis,
         ext={"environment_id": runtime.current_environment_id},
     )
-

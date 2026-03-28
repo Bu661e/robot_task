@@ -92,6 +92,8 @@ $ISAAC_SIM_ROOT/python.sh /path/to/your_script.py
 - 截至 `2026-03-28`，当前云主机已经完成以下实测：
   - `/root/isaacsim/python.sh -m robot_service.worker.entrypoint` 独立 smoke test 成功
   - 真实 `SimulationApp` 可以在云主机上启动
+  - `load_environment -> get_cameras -> shutdown` 的真实 worker round-trip 已经跑通，且会产出 RGB / depth artifact
+  - 当前第一阶段公开接口 `/sessions -> /robot -> /cameras -> /artifacts -> DELETE /sessions` 已在真实 Isaac Sim runtime 下跑通
   - 在当前公开接口收敛到第一阶段之前，曾用内部占位接口跑通过 `/sessions -> /robot -> /action-apis -> /tasks -> DELETE /sessions` 的真实 API 联调链路；当前对外范围仍以第一阶段协议中的 6 个接口为准
 
 ### 6. Isaac Sim 5.0 关键 API 记录
@@ -128,7 +130,7 @@ simulation_app = SimulationApp({"headless": True})
 - Hello World 教程（`World`、`scene.add_default_ground_plane()`）：https://docs.isaacsim.omniverse.nvidia.com/5.0.0/core_api_tutorials/tutorial_core_hello_world.html
 - Python API 参考（`World`、`Scene`、`GroundPlane`、`DynamicCuboid`）：https://docs.isaacsim.omniverse.nvidia.com/latest/py/source/extensions/isaacsim.core.api/docs/api.html
 
-#### 6.3 最小场景对象
+#### 6.3 基础环境对象
 
 - 地面：
 
@@ -136,18 +138,49 @@ simulation_app = SimulationApp({"headless": True})
 world.scene.add_default_ground_plane()
 ```
 
-- 方块：
+- 桌子：
+
+```python
+from isaacsim.core.api.objects import FixedCuboid
+
+world.scene.add(
+    FixedCuboid(
+        prim_path="/World/Furniture/Table",
+        name="table",
+        position=np.array([0.0, 0.0, 0.75]),
+        scale=np.array([1.5, 1.5, 1.5]),
+        size=1.0,
+    )
+)
+```
+
+- 桌面物体：
 
 ```python
 from isaacsim.core.api.objects import DynamicCuboid
 
 world.scene.add(
     DynamicCuboid(
-        prim_path="/World/Block",
-        name="block",
-        position=np.array([0.0, 0.0, 0.1]),
-        size=0.2,
-        color=np.array([0.2, 0.6, 0.9]),
+        prim_path="/World/Tabletop/red_cube_1",
+        name="red_cube_1",
+        position=np.array([0.0, 0.0, 1.57]),
+        scale=np.array([0.1, 0.1, 0.1]),
+        size=1.0,
+        color=np.array([0.85, 0.12, 0.12]),
+    )
+)
+```
+
+- Franka：
+
+```python
+from isaacsim.robot.manipulators.examples.franka import Franka
+
+world.scene.add(
+    Franka(
+        prim_path="/World/Franka",
+        name="franka",
+        position=np.array([0.0, -0.48, 1.5]),
     )
 )
 ```
@@ -165,7 +198,23 @@ light.CreateIntensityAttr(500.0)
 - Core API 里的对象说明：`GroundPlane`、`DynamicCuboid` 见上面的 Python API 参考页
 - `UsdLux.DistantLight.Define(...)` 的官方示例：https://docs.isaacsim.omniverse.nvidia.com/5.0.0/importer_exporter/import_mjcf.html
 
-#### 6.4 当前云主机上的实现约定
+#### 6.4 Camera 采集 API
+
+- 当前顶视相机使用 `from isaacsim.sensors.camera import Camera`
+- 当前会用到的调用：
+  - `camera.initialize()`
+  - `camera.add_distance_to_image_plane_to_frame()`
+  - `camera.get_rgba()`
+  - `camera.get_current_frame(clone=True)`
+  - `camera.get_intrinsics_matrix()`
+  - `camera.get_world_pose(camera_axes="world")`
+  - `camera.set_horizontal_aperture(...)`
+  - `camera.set_focal_length(...)`
+
+官方资料：
+- Camera API 参考：https://docs.isaacsim.omniverse.nvidia.com/latest/py/source/extensions/isaacsim.sensors.camera/docs/api.html
+
+#### 6.5 当前云主机上的实现约定
 
 - 当前分支优先使用 `isaacsim.*` import path，不再新增 `omni.isaac.*` 写法。
 - 这是因为当前云主机的 Isaac Sim `5.0.0-rc.45` 运行日志已经持续给出 `omni.isaac.*` 相关 deprecation warning，而 `isaacsim.core.api.*` 与官方 5.x 示例、安装内容是对齐的。
@@ -251,6 +300,10 @@ robot_service/
     environment.py
     queries.py
     task_runner.py
+    tabletop_layouts/
+      __init__.py
+      models.py
+      default.py
 
   common/
     schemas.py
@@ -314,22 +367,39 @@ robot_service/
 #### `worker/environment.py`
 
 负责：
-- 清理并重建最小场景
+- 清理并重建基础环境
   - ground
   - light
-  - block
-- 根据 `environment_id` 加载桌面物体环境
+  - table
+  - franka
+  - top camera
+- 根据 `environment_id` 调用对应桌面环境文件并加载桌面物体
+- 采集顶视相机的 RGB / depth，并把它们落成 artifact
 
 当前代码里已先实现：
 - 接收并保存 `environment_id`
 - 在没有 Isaac Sim Python 模块时回退到占位模式
-- 在真实 Isaac Sim runtime 下创建最小场景：`ground`、`light`、`block`
+- 在真实 Isaac Sim runtime 下创建基础环境：
+  - `ground`
+  - `light`
+  - `1.5m x 1.5m x 1.5m` 立方体桌子
+  - 放在桌子一侧中间的 Franka
+  - 离地 `3m` 的顶视相机
+- 默认桌面环境 `env-default`
+  - `2` 个红色方块
+  - `2` 个蓝色方块
+  - 尺寸约 `10cm`
+  - 随机且避免明显重叠的桌面摆放
 
-当前还没有实现：
-- 真实机械臂
-- 桌子
-- 相机
-- 不同 `environment_id` 对应的物体布局
+#### `worker/tabletop_layouts/`
+
+负责：
+- 把“桌面环境”从“基础环境”里拆出来
+- 每个 `environment_id` 对应一个独立文件或构建函数
+
+当前代码里：
+- `default.py` 实现了 `env-default`
+- 后续新增桌面环境时，优先继续按这个目录扩展，而不是把所有环境硬塞回 `environment.py`
 
 #### `worker/queries.py`
 
@@ -339,7 +409,11 @@ robot_service/
 
 当前代码里：
 - `robot_status` 返回占位 `ready`
-- `cameras` 先返回空数组和占位说明
+- `cameras` 会返回真实顶视相机的：
+  - `rgb_image`
+  - `depth_image`
+  - intrinsics
+  - extrinsics
 
 #### `worker/task_runner.py`
 
@@ -431,14 +505,17 @@ robot_service/
 - 第一阶段公开接口：session / robot / cameras / artifacts
 - `environment_id` 从 HTTP 接口传到 worker
 - PTY + JSON line 的 worker IPC
-- 最小真实 Isaac 场景加载：`ground`、`light`、`block`
+- 基础环境与桌面环境拆分
+- 默认基础环境：`ground`、`light`、`table`、`franka`、`top camera`
+- 默认桌面环境：`env-default` 的 `2` 红 `2` 蓝方块
+- 真实相机 artifact 输出：
+  - RGB -> `image/png`
+  - depth -> `application/x-npy`
 - 本地可运行的单元测试
 - `2026-03-28` 在当前云主机上的真实 worker smoke test
-- `2026-03-28` 在当前云主机上的一轮真实 API smoke test（当时仍包含内部占位的 `action-apis/tasks` 链路）
+- `2026-03-28` 在当前云主机上的真实第一阶段 API smoke test
 
 目前还没有实现：
-- 真实机械臂、桌子、相机的完整场景创建
-- 不同 `environment_id` 对应不同桌面物体布局
-- 真实相机图像 artifact 输出
+- 除 `env-default` 之外的其他桌面环境
 - 第二阶段的动作 API 描述接口
 - 第二阶段的 task 执行、查询和取消接口

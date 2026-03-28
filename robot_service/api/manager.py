@@ -277,10 +277,15 @@ class RobotServiceManager:
             event = self._send_worker_command("get_cameras", {})
             if event.event_type != "cameras_payload":
                 raise RobotServiceError(f"Unexpected worker event: {event.event_type}")
+            payload = dict(event.payload)
+            artifact_records = payload.pop("artifact_records", [])
+            for artifact_record in artifact_records:
+                record = ArtifactRecord.model_validate(artifact_record)
+                self.artifact_index[record.artifact_id] = record
             return CamerasResponse.model_validate(
                 {
                     "session_id": session_id,
-                    **event.payload,
+                    **payload,
                 }
             )
 

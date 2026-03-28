@@ -40,8 +40,49 @@ class FakeWorkerHandle:
                 event_type="cameras_payload",
                 payload={
                     "timestamp": "2026-03-28T00:00:01Z",
-                    "cameras": [],
-                    "ext": {"note": "Placeholder camera payload"},
+                    "cameras": [
+                        {
+                            "camera_id": "table_top",
+                            "rgb_image": {
+                                "artifact_id": "artifact-rgb",
+                                "content_type": "image/png",
+                            },
+                            "depth_image": {
+                                "artifact_id": "artifact-depth",
+                                "content_type": "application/x-npy",
+                            },
+                            "intrinsics": {
+                                "fx": 500.0,
+                                "fy": 510.0,
+                                "cx": 320.0,
+                                "cy": 240.0,
+                                "width": 640,
+                                "height": 480,
+                            },
+                            "extrinsics": {
+                                "translation": [0.0, 0.0, 3.0],
+                                "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
+                            },
+                            "ext": {"depth_encoding": "npy-float32"},
+                        }
+                    ],
+                    "artifact_records": [
+                        {
+                            "artifact_id": "artifact-rgb",
+                            "session_id": "sess-demo",
+                            "content_type": "image/png",
+                            "file_path": "/tmp/artifact-rgb.png",
+                            "ext": {},
+                        },
+                        {
+                            "artifact_id": "artifact-depth",
+                            "session_id": "sess-demo",
+                            "content_type": "application/x-npy",
+                            "file_path": "/tmp/artifact-depth.npy",
+                            "ext": {},
+                        },
+                    ],
+                    "ext": {"environment_id": "env-default"},
                 },
             )
         raise AssertionError(f"Unexpected command type: {command.command_type}")
@@ -106,7 +147,9 @@ def test_get_robot_and_cameras_return_first_phase_payloads():
     assert robot_response.status_code == 200
     assert robot_response.json()["robot_status"] == "ready"
     assert cameras_response.status_code == 200
-    assert cameras_response.json()["cameras"] == []
+    camera = cameras_response.json()["cameras"][0]
+    assert camera["camera_id"] == "table_top"
+    assert camera["depth_image"]["artifact_id"] == "artifact-depth"
 
 
 def test_second_phase_routes_are_not_exposed_in_first_phase():

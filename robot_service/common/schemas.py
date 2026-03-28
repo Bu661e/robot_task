@@ -78,6 +78,7 @@ class CameraExtrinsics(BaseSchema):
 class CameraPayload(BaseSchema):
     camera_id: str
     rgb_image: ArtifactRef
+    depth_image: ArtifactRef
     intrinsics: CameraIntrinsics
     extrinsics: CameraExtrinsics
     ext: dict[str, Any] = Field(default_factory=dict)
@@ -135,4 +136,3 @@ class ArtifactRecord(BaseSchema):
     content_type: str
     file_path: str
     ext: dict[str, Any] = Field(default_factory=dict)
-

@@ -2,13 +2,15 @@
 
 **Branch:** `feature/robot-service`
 **Original local handoff commit:** `41e3fdf`
-**Current cloud-host review head:** `0947719`
+**Current cloud-host review head:** `4434848`
 **Cloud host Isaac Sim root:** `/root/isaacsim`
-**Current non-GPU verification:** `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --project robot_service pytest robot_service/tests -q` -> `22 passed`
+**Current non-GPU verification:** `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --project robot_service pytest robot_service/tests -q` -> `25 passed`
 **Current cloud verification (`2026-03-28`):**
 - worker standalone smoke succeeded with `/root/isaacsim/python.sh -m robot_service.worker.entrypoint`
+- worker real camera smoke succeeded with `load_environment -> get_cameras -> shutdown`
 - real `SimulationApp` startup succeeded on the cloud host
-- one internal API smoke succeeded on `127.0.0.1:18080` before the public API was narrowed to first-phase scope
+- first-phase public API smoke succeeded on `127.0.0.1:18080` through session/robot/cameras/artifacts/delete
+- one earlier internal API smoke also succeeded on `127.0.0.1:18080` before the public API was narrowed to first-phase scope
 
 ## Cloud Host Notes
 
@@ -28,7 +30,9 @@ The repository already contains the first runnable skeleton for `robot_service`:
 - single active task
 - single Isaac worker subprocess using PTY-backed IPC
 - `environment_id` accepted by `POST /sessions` and forwarded to the worker
-- minimal real worker environment with default `ground`, `light`, `block`
+- fixed base environment with `ground`, `light`, `table`, `franka`, `top camera`
+- default tabletop environment `env-default` with `2` red cubes and `2` blue cubes
+- real camera RGB/depth artifact output
 - placeholder task execution path
 
 Current key files:
@@ -53,7 +57,7 @@ Current key files:
 
 ## Goal Of The Next Phase
 
-Bring the current skeleton to the cloud Linux host and verify the **real Isaac Sim 5.0.0 startup path** before writing more Isaac-specific business logic.
+Carry the cloud bring-up from “startup verified” to “first-phase observation path usable” before writing second-phase task execution logic.
 
 The next phase is **not**:
 
@@ -66,8 +70,9 @@ The next phase **is**:
 
 - proving `$ISAAC_SIM_ROOT/python.sh` can actually launch the worker
 - proving `SimulationApp` can initialize on the target cloud machine
-- replacing placeholder environment loading with a minimal real Isaac scene
-- keeping `environment_id` in the API even if the real scene still uses a minimal default layout
+- building the fixed base environment
+- splitting tabletop layouts by `environment_id`
+- exposing real RGB / depth observation artifacts through the first-phase public API
 
 ## Recommended Execution Order
 
@@ -120,20 +125,25 @@ If this fails, stop and fix worker startup first. Do not continue into API work.
 
 ### 3. Minimal Real Isaac Environment
 
-Replace the placeholder `EnvironmentRuntime.load_environment()` logic with the smallest real scene that is practical on the cloud host.
+Replace the placeholder `EnvironmentRuntime.load_environment()` logic with the first usable base scene on the cloud host.
 
 Minimum target:
 
 - ground
 - light
-- one default block or cuboid
+- `1.5m x 1.5m x 1.5m` cube table
+- Franka at the middle of one table side
+- top camera around `3m` height with required depth output
+- default tabletop layout for `env-default`
+  - `2` red cubes
+  - `2` blue cubes
 
 Still keep:
 
 - `environment_id` accepted and stored
 - `environment_id` passed through the API to the worker
 
-Do **not** expand to full tabletop object presets yet unless the minimum scene is already stable.
+Do **not** expand to more than `env-default` until the fixed base environment and first camera output path are stable.
 
 ### 4. API To Worker Real Bring-Up
 
@@ -160,9 +170,11 @@ The first acceptance target is “API and worker stay coherent under a real Isaa
 - [x] Replace placeholder environment setup in `robot_service/worker/environment.py` with a real minimal scene
 - [x] Confirm `POST /sessions` moves from `starting` to `ready` on the cloud host
 - [x] Confirm `GET /sessions/{id}/robot` returns a real response under Isaac Sim
-- [ ] Confirm `GET /sessions/{id}/cameras` returns a worker-backed response under real Isaac Sim
-- [ ] Confirm `GET /artifacts/{artifact_id}` works once real camera artifacts are produced
-- [ ] Implement the first-phase camera/depth output path next
+- [x] Confirm `GET /sessions/{id}/cameras` returns a worker-backed response under real Isaac Sim
+- [x] Confirm `GET /artifacts/{artifact_id}` works once real camera artifacts are produced
+- [x] Implement the first-phase camera/depth output path
+- [ ] Add more `environment_id` tabletop presets beyond `env-default`
+- [ ] Decide whether to keep `application/x-npy` for depth artifacts or switch to another transport format
 
 ## Suggested First Commands On The Cloud Host
 
@@ -203,8 +215,7 @@ The next phase should be considered successful only if all of the following are 
 
 These gaps are known and acceptable for now:
 
-- no full `environment_id` -> tabletop object mapping yet
-- no real camera artifact output yet
+- only `env-default` is implemented for `environment_id` -> tabletop object mapping
 - no real pick-and-place execution yet
 - no real running-task cancellation yet
 

@@ -85,12 +85,15 @@ def main() -> int:
             continue
 
         if command.command_type == "get_cameras":
-            response = build_cameras_payload(args.session_id, runtime)
+            response, artifact_records = build_cameras_payload(args.session_id, runtime)
+            payload = response.model_dump(exclude={"session_id"}, mode="json")
+            if artifact_records:
+                payload["artifact_records"] = [artifact.model_dump(mode="json") for artifact in artifact_records]
             _emit(
                 WorkerEvent(
                     request_id=command.request_id,
                     event_type="cameras_payload",
-                    payload=response.model_dump(exclude={"session_id"}, mode="json"),
+                    payload=payload,
                 )
             )
             continue
