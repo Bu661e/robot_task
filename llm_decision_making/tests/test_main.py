@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import runpy
+import sys
 from pathlib import Path
 from typing import Sequence, get_type_hints
 
@@ -9,16 +11,15 @@ import pytest
 
 from modules.schemas import ParsedTask, SourceTask
 from main import load_task_from_cli, run
+from utils.run_logging import clear_active_run_logger, get_active_run_logger, start_run_logging
 from utils.robot_schemas import SessionInfo
 
 
-def test_load_task_from_cli_uses_default_task_file() -> None:
-    task, objects_env_id = load_task_from_cli(
-        ["--task-id", "2", "--objects-env-id", "2-ycb"]
-    )
+def test_load_task_from_cli_uses_default_task_file_and_default_objects_env_id() -> None:
+    task, objects_env_id = load_task_from_cli(["--task-id", "2"])
 
     assert task == SourceTask(task_id="2", instruction="Pick up the smallest ball.")
-    assert objects_env_id == "2-ycb"
+    assert objects_env_id == "env-default"
 
 
 def test_load_task_from_cli_accepts_custom_task_file(tmp_path: Path) -> None:
@@ -48,9 +49,11 @@ def test_load_task_from_cli_accepts_custom_task_file(tmp_path: Path) -> None:
     assert objects_env_id == "custom-env"
 
 
-def test_load_task_from_cli_requires_objects_env_id() -> None:
-    with pytest.raises(SystemExit):
-        load_task_from_cli(["--task-id", "2"])
+def test_load_task_from_cli_uses_default_objects_env_id_when_not_provided() -> None:
+    task, objects_env_id = load_task_from_cli(["--task-id", "2"])
+
+    assert task.task_id == "2"
+    assert objects_env_id == "env-default"
 
 
 def test_load_task_from_cli_rejects_blank_objects_env_id() -> None:
@@ -66,7 +69,7 @@ def test_run_returns_parsed_task_and_calls_robot_client(
         session_id="sess_1",
         session_status="ready",
         backend_type="isaac_sim",
-        environment_id="2-ycb",
+        environment_id="env-default",
         ext={},
     )
     call_order: list[tuple[str, str]] = []
@@ -153,7 +156,7 @@ def test_run_closes_session_when_task_parser_raises(
         session_id="sess_1",
         session_status="ready",
         backend_type="isaac_sim",
-        environment_id="2-ycb",
+        environment_id="env-default",
         ext={},
     )
     call_order: list[tuple[str, str]] = []
@@ -189,3 +192,109 @@ def test_run_closes_session_when_task_parser_raises(
     assert call_order == [
         ("close_session", "sess_1"),
     ]
+
+
+def test_run_logs_task_input_and_parsed_output_when_run_logger_is_active(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    task = SourceTask(task_id="manual", instruction="Pick up the bottle.")
+    session = SessionInfo(
+        session_id="sess_1",
+        session_status="ready",
+        backend_type="isaac_sim",
+        environment_id="env-default",
+        ext={},
+    )
+    run_logger = start_run_logging(task_id=task.task_id, base_dir=tmp_path)
+
+    class FakeTaskParser:
+        @classmethod
+        def from_config(cls) -> FakeTaskParser:
+            return cls()
+
+        def parse_task(self, task_description: SourceTask) -> ParsedTask:
+            return ParsedTask(
+                task_id=task_description.task_id,
+                instruction=task_description.instruction,
+                object_texts=["bottle"],
+            )
+
+    monkeypatch.setattr("main.TaskParser", FakeTaskParser)
+
+    class FakeRobotClient:
+        def get_robot(self, session_id: str) -> object:
+            return object()
+
+        def get_cameras(self, session_id: str) -> object:
+            return object()
+
+        def close_session(self, session_id: str) -> object:
+            return object()
+
+    monkeypatch.setattr("main.default_robot_client", FakeRobotClient())
+
+    run(task, session)
+
+    log_text = run_logger.run_log_path.read_text(encoding="utf-8")
+    assert '"instruction": "Pick up the bottle."' in log_text
+    assert '"object_texts": [' in log_text
+
+    clear_active_run_logger()
+
+
+def test_main_cli_creates_and_clears_run_logger(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    task = SourceTask(task_id="manual", instruction="Pick up the bottle.")
+
+    class FakeTaskParser:
+        @classmethod
+        def from_config(cls) -> FakeTaskParser:
+            return cls()
+
+        def parse_task(self, task_description: SourceTask) -> ParsedTask:
+            return ParsedTask(
+                task_id=task_description.task_id,
+                instruction=task_description.instruction,
+                object_texts=["bottle"],
+            )
+
+    class FakeRobotClient:
+        def create_session(self, environment_id: str) -> SessionInfo:
+            return SessionInfo(
+                session_id="sess_1",
+                session_status="ready",
+                backend_type="isaac_sim",
+                environment_id=environment_id,
+                ext={},
+            )
+
+        def get_robot(self, session_id: str) -> object:
+            return object()
+
+        def get_cameras(self, session_id: str) -> object:
+            return object()
+
+        def close_session(self, session_id: str) -> object:
+            return object()
+
+    monkeypatch.setattr("modules.task_loader.TaskLoader.load_from_cli", lambda self, task_file, task_id: task)
+    monkeypatch.setattr("modules.task_parser.TaskParser", FakeTaskParser)
+    monkeypatch.setattr("utils.robot_client.default_robot_client", FakeRobotClient())
+    monkeypatch.setattr("utils.run_logging.RUNS_DIR", tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["main.py", "--task-id", task.task_id],
+    )
+
+    runpy.run_module("main", run_name="__main__")
+
+    run_directories = sorted(tmp_path.glob("*_task-manual"))
+    assert len(run_directories) == 1
+    assert get_active_run_logger() is None
+    log_text = (run_directories[0] / "run.log").read_text(encoding="utf-8")
+    assert '"instruction": "Pick up the bottle."' in log_text
+    assert '"object_texts": [' in log_text

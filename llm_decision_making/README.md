@@ -21,6 +21,32 @@
 也就是说，`llm_decision_making` 不知道，也不在乎这两个模块内部用了什么框架、什么模型、什么控制器、什么 Isaac API。  
 它只关心两件事：1. 往哪个 HTTP 接口发请求 2. 会收到什么结构化数据
 
+## 运行日志
+
+日志的基本单元是一次 `run`，不是 task 集合，也不是长生命周期 session。
+每次通过 CLI 执行 `main.py` 时，都会在 `runs/` 下创建一个新的目录：
+
+```text
+runs/
+  2026-03-28_16-30-45_task-1/
+    run.log
+    robot_service/
+      requests/
+      responses/
+      artifacts/
+    perception_service/
+      requests/
+      responses/
+      artifacts/
+```
+
+当前约定如下：
+- 终端只打印摘要，方便实时查看执行进度
+- `run.log` 记录模块间数据流和 HTTP 请求/响应的完整文本内容
+- `robot_service` 和 `perception_service` 的请求、响应、产物分开落盘，便于后续排查
+- 图片、点云、深度图等大二进制内容不直接写入日志文本；实际内容保存到 `artifacts/`，日志和响应元数据中只记录文件路径与大小
+- artifact 文件名会尽量根据 `content_type` 补齐后缀，例如 `.png`、`.npy`
+
 
 ## 组成
 
@@ -35,7 +61,8 @@
 当前 CLI 入口约定：
 - 通过 `--task-file` 指定 YAML 文件路径，默认使用 `tasks/tasks_en.yaml`
 - 通过 `--task-id` 从 YAML 任务列表中选择单个任务
-- 通过 `--objects-env-id` 显式提供本次运行使用的环境 id，这个参数是必填的，并且去掉首尾空白后不能为空
+- `--objects-env-id` 用于指定本次运行使用的环境 id；如果不传，默认使用 `env-default`
+- 如果显式传入 `--objects-env-id`，去掉首尾空白后不能为空
 
 其中 YAML 只负责提供任务内容，`objects_env_id` 不再写在任务文件中，而是在 CLI 启动时单独提供。
 如果任务 YAML 里仍然残留 `objects_env_id`，当前实现会直接报错，避免误以为旧字段仍然生效。
@@ -107,6 +134,8 @@
 - `ROBOT_TIMEOUT_S`
 - `ROBOT_TRUST_ENV`
 
+当前仓库默认的 `ROBOT_BASE_URL` 是 `https://vsq4t8n3-wteq1vxp-18080.ahrestapi.gpufree.cn:8443`，用于第一阶段联调；如果后续环境变化，可再通过环境变量覆盖。
+
 与 `robot_service` 第一阶段协议对应的数据结构放在 `utils/robot_schemas.py`，而不是 `modules/`。
 
 当前约定中，`session_id` 是 `robot_service` 返回的持久化实例标识，后续所有 session 级接口都基于这个 id 调用；该 id 本身会编码 `backend_type`。
@@ -133,7 +162,7 @@
 ### CLI 运行时参数
 ```json
 {
-  "objects_env_id": "2-ycb"
+  "objects_env_id": "env-default"
 }
 ```
 说明：
@@ -166,16 +195,17 @@
 `llm_decision_making` 的推荐链路如下：
 
 1. 通过 `task_loader` 从 HTTP 请求或命令行参数读取 YAML 任务内容
-2. 通过 CLI 必填参数 `--objects-env-id` 获取本次运行使用的环境 id
-3. 在 `main.py` 中直接使用共享的 `default_robot_client`
-4. 通过 `robot_client` 请求 `robot_service`，传入 `backend_type` 和 `environment_id`，创建机器人 session 并获取 `session_id`
-5. 通过 `robot_client` 基于 `session_id` 获取 robot 状态、camera 元数据与 artifact 引用，并下载 RGB 图、深度图等机器人侧观测数据
-6. 调用 `task_parser`，得到任务解析结果
-7. 后续通过 `perception_client` 请求 `perception_service`，获取3D感知结果
-8. 后续通过 `pose_transformer` 把3D感知结果转换到世界坐标系
-9. 后续通过 `policy_model` 生成策略代码
-10. 后续通过 `policy_executor` 把 `ParsedTask`、感知数据和策略代码组装成 task record，并提交到 `POST /sessions/{session_id}/tasks`
-11. `main.py` 在当前一轮调用结束后关闭该 `session`
+2. 通过 CLI 参数 `--objects-env-id` 获取本次运行使用的环境 id；未传时默认使用 `env-default`
+3. `main.py` 基于 `task_id` 初始化本次 `run` 的日志目录
+4. 在 `main.py` 中直接使用共享的 `default_robot_client`
+5. 通过 `robot_client` 请求 `robot_service`，传入 `backend_type` 和 `environment_id`，创建机器人 session 并获取 `session_id`
+6. 通过 `robot_client` 基于 `session_id` 获取 robot 状态、camera 元数据与 artifact 引用，并下载 RGB 图、深度图等机器人侧观测数据
+7. 调用 `task_parser`，得到任务解析结果
+8. 后续通过 `perception_client` 请求 `perception_service`，获取3D感知结果
+9. 后续通过 `pose_transformer` 把3D感知结果转换到世界坐标系
+10. 后续通过 `policy_model` 生成策略代码
+11. 后续通过 `policy_executor` 把 `ParsedTask`、感知数据和策略代码组装成 task record，并提交到 `POST /sessions/{session_id}/tasks`
+12. `main.py` 在当前一轮调用结束后关闭该 `session`，并清理 active run logger
 
 这个过程中，`llm_decision_making` 只依赖外部协议，不依赖远端实现细节。
 
@@ -205,15 +235,20 @@
   - robot HTTP 协议第一阶段的数据结构
 - `utils/perception_client.py`
   - perception HTTP 客户端工具
+- `utils/run_logging.py`
+  - run 级日志工具，负责目录创建、终端摘要输出、完整文件日志落盘，以及 robot/perception 分目录管理
 
 - configs/
   - 存放配置文件，包括远端服务地址、模型参数等
   - config/llm_config.py 定义共享 LLM 连接配置，例如 `LLM_BASE_URL`、`LLM_API_KEY` 和 `LLM_TRUST_ENV`
   - config/robot_config.py 定义 `robot_client` 使用的共享连接配置，例如 `ROBOT_BASE_URL`、`ROBOT_BACKEND_TYPE`、`ROBOT_TIMEOUT_S` 和 `ROBOT_TRUST_ENV`
+  - config/run_logging_config.py 定义 run 日志根目录 `RUNS_DIR`
   - config/main_config.py 是 `main.py` 的配置文件，定义默认任务文件路径等入口参数
   - config/task_parser_config.py 是 `task_parser` 模块的配置文件，定义模型、prompt 和过滤项等 parser 自身参数
 - tasks/
   - 存放任务 YAML 文件，例如 `tasks/tasks_en.yaml`
+- runs/
+  - 按一次 run 保存日志与产物
 
 ## 仓库根目录中的共享协议文档
 

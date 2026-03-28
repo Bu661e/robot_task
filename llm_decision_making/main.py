@@ -5,11 +5,12 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
-from config.main_config import DEFAULT_TASK_FILE
+from config.main_config import DEFAULT_OBJECTS_ENV_ID, DEFAULT_TASK_FILE
 from modules.schemas import ParsedTask, SourceTask
 from modules.task_parser import TaskParser
 from modules.task_loader import TaskLoader
 from utils.robot_client import default_robot_client
+from utils.run_logging import clear_active_run_logger, get_active_run_logger, start_run_logging
 from utils.robot_schemas import SessionInfo
 
 
@@ -28,7 +29,7 @@ def load_task_from_cli(argv: Sequence[str]) -> tuple[SourceTask, str]:
     )
     parser.add_argument(
         "--objects-env-id",
-        required=True,
+        default=DEFAULT_OBJECTS_ENV_ID,
         help="Environment identifier used to initialize the robot client.",
     )
     args = parser.parse_args(argv)
@@ -44,8 +45,31 @@ def load_task_from_cli(argv: Sequence[str]) -> tuple[SourceTask, str]:
 
 def run(task: SourceTask, session: SessionInfo) -> None:
     try:
+        run_logger = get_active_run_logger()
+        if run_logger is not None:
+            run_logger.log_data_flow(
+                module="main",
+                event="task_input",
+                payload=task,
+                summary=f"task_id={task.task_id}",
+            )
+            run_logger.log_data_flow(
+                module="main",
+                event="session_input",
+                payload=session,
+                summary=f"session_id={session.session_id}",
+            )
+
         task_parser: TaskParser = TaskParser.from_config()
-        task_parser.parse_task(task)
+        parsed_task: ParsedTask = task_parser.parse_task(task)
+        if run_logger is not None:
+            run_logger.log_data_flow(
+                module="task_parser",
+                event="task_parsed",
+                payload=parsed_task,
+                summary=f"task_id={parsed_task.task_id} objects={','.join(parsed_task.object_texts)}",
+            )
+
         default_robot_client.get_robot(session.session_id)
         default_robot_client.get_cameras(session.session_id)
     finally:
@@ -54,6 +78,21 @@ def run(task: SourceTask, session: SessionInfo) -> None:
 
 if __name__ == "__main__":
     task, objects_env_id = load_task_from_cli(sys.argv[1:])
-    session = default_robot_client.create_session(objects_env_id)
+    start_run_logging(task.task_id)
+    try:
+        run_logger = get_active_run_logger()
+        if run_logger is not None:
+            run_logger.log_data_flow(
+                module="main",
+                event="task_loaded",
+                payload={
+                    "task": task,
+                    "objects_env_id": objects_env_id,
+                },
+                summary=f"task_id={task.task_id} objects_env_id={objects_env_id}",
+            )
 
-    run(task, session)
+        session = default_robot_client.create_session(objects_env_id)
+        run(task, session)
+    finally:
+        clear_active_run_logger()

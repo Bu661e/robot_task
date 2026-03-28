@@ -183,12 +183,17 @@ class CameraObservation:
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, object]) -> CameraObservation:
+        ext_payload = _as_mapping(payload.get("ext", {}))
+        if "depth_image" in payload and "depth_image" not in ext_payload:
+            ext_payload = dict(ext_payload)
+            ext_payload["depth_image"] = payload["depth_image"]
+
         return cls(
             camera_id=_as_str(payload, "camera_id"),
             rgb_image=ArtifactRef.from_dict(_as_mapping(payload["rgb_image"])),
             intrinsics=CameraIntrinsics.from_dict(_as_mapping(payload["intrinsics"])),
             extrinsics=CameraExtrinsics.from_dict(_as_mapping(payload["extrinsics"])),
-            ext=CameraExt.from_dict(_as_mapping(payload.get("ext", {}))),
+            ext=CameraExt.from_dict(ext_payload),
         )
 
 
