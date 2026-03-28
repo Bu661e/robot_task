@@ -334,17 +334,46 @@ task 执行通常不是瞬时完成的，因此每条 task 记录都应维护独
         "fx": 533.33,
         "fy": 533.33,
         "cx": 320.0,
-        "cy": 240.0,
+        "cy": 320.0,
         "width": 640,
-        "height": 480
+        "height": 640
       },
       "extrinsics": {
-        "translation": [0.0, 0.0, 3.0],
+        "translation": [0.0, 0.0, 6.0],
         "quaternion_xyzw": [0.0, 0.7071, 0.0, 0.7071]
       },
       "ext": {
         "depth_unit": "meter",
-        "depth_encoding": "npy-float32"
+        "depth_encoding": "npy-float32",
+        "view_mode": "top_down"
+      }
+    },
+    {
+      "camera_id": "table_overview",
+      "rgb_image": {
+        "content_type": "image/png",
+        "artifact_id": "artifact_rgb_sess_isaac_sim_20260327153045_a1b2_0003"
+      },
+      "depth_image": {
+        "content_type": "application/x-npy",
+        "artifact_id": "artifact_depth_sess_isaac_sim_20260327153045_a1b2_0004"
+      },
+      "intrinsics": {
+        "fx": 533.33,
+        "fy": 533.33,
+        "cx": 320.0,
+        "cy": 320.0,
+        "width": 640,
+        "height": 640
+      },
+      "extrinsics": {
+        "translation": [0.0, 3.3, 3.3],
+        "quaternion_xyzw": [0.1830, 0.1830, -0.6830, 0.6830]
+      },
+      "ext": {
+        "depth_unit": "meter",
+        "depth_encoding": "npy-float32",
+        "view_mode": "robot_opposite_overview"
       }
     }
   ],
@@ -356,6 +385,7 @@ task 执行通常不是瞬时完成的，因此每条 task 记录都应维护独
 - 当前约定图像和深度图不直接内嵌在 JSON 中，而是通过 `artifact_id` 引用
 - 决策端拿到 `artifact_id` 后，再通过单独的 artifact 下载接口获取二进制文件
 - `cameras` 长期保持数组结构，即使当前只有一个相机也返回单元素数组
+- 当前第一阶段默认环境会返回两个相机：`table_top` 和 `table_overview`
 - `rgb_image` 为必需字段
 - `depth_image` 为必需字段
 - 当前第一阶段默认把深度图保存为 `float32` 的 `.npy` artifact，`content_type` 为 `application/x-npy`

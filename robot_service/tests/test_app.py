@@ -84,7 +84,7 @@ class FakeWorkerHandle:
                                 "height": 640,
                             },
                             "extrinsics": {
-                                "translation": [0.0, 1.8, 2.5],
+                                "translation": [0.0, 3.3, 3.3],
                                 "quaternion_xyzw": [0.0, 0.5, -0.8660254, 0.0],
                             },
                             "ext": {"depth_encoding": "npy-float32"},

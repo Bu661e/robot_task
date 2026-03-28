@@ -62,7 +62,7 @@ def test_overview_camera_mount_uses_usd_intrinsic_euler_angles():
     assert top_camera_spec.camera_id == "table_top"
     assert top_camera_spec.euler_extrinsic is True
     assert overview_camera_spec.camera_id == "table_overview"
-    assert overview_camera_spec.position_xyz == (0.0, 1.8, 2.5)
+    assert overview_camera_spec.position_xyz == (0.0, 3.3, 3.3)
     assert overview_camera_spec.euler_xyz_deg == (-60.0, 0.0, -180.0)
     assert overview_camera_spec.euler_extrinsic is False
     assert overview_camera_spec.camera_axes == "usd"
@@ -139,7 +139,7 @@ def test_build_cameras_payload_returns_artifact_backed_depth_camera():
                     height=640,
                 ),
                 extrinsics=CameraExtrinsics(
-                    translation=[0.0, 1.8, 2.5],
+                    translation=[0.0, 3.3, 3.3],
                     quaternion_xyzw=[0.0, 0.5, -0.8660254, 0.0],
                 ),
                 ext={"depth_encoding": "npy-float32"},
@@ -164,7 +164,7 @@ def test_build_cameras_payload_returns_artifact_backed_depth_camera():
     assert overview_camera.camera_id == "table_overview"
     assert overview_camera.rgb_image.artifact_id == "artifact-rgb-overview"
     assert overview_camera.depth_image.artifact_id == "artifact-depth-overview"
-    assert overview_camera.extrinsics.translation == [0.0, 1.8, 2.5]
+    assert overview_camera.extrinsics.translation == [0.0, 3.3, 3.3]
     assert overview_camera.intrinsics.width == 640
     assert overview_camera.intrinsics.height == 640
     assert artifact_records == [rgb_record, depth_record, overview_rgb_record, overview_depth_record]

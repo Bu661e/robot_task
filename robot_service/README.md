@@ -202,9 +202,10 @@ light.CreateIntensityAttr(650.0)
 
 - 当前基础环境里有两个相机：
   - 顶视相机：位于 `(0, 0, 6.0)`，覆盖整个桌面，提供稳定的全局 RGB / depth
-  - 机械臂对侧的俯视概览相机：位于 `(0, 1.8, 2.5)`，同时覆盖桌面和机械臂
+  - 机械臂对侧的俯视概览相机：位于 `(0, 3.3, 3.3)`，同时覆盖桌面和机械臂
   - 两个相机当前都输出 `640 x 640` 的正方形图像
   - 当前 overview 相机按 `USD/local pose` 写入固定欧拉角 `(-60, 0, -180)`，这样 Property 面板看到的值能和代码对齐
+  - 对外 `GET /sessions/{session_id}/cameras` 响应中的 `extrinsics.quaternion_xyzw` 固定按共享协议返回 `[x, y, z, w]`
 - 当前会用到的调用：
   - `camera.initialize()`
   - `camera.add_distance_to_image_plane_to_frame()`
@@ -251,7 +252,7 @@ orientation = rot_utils.euler_angles_to_quats(
 )
 
 camera.set_local_pose(
-    translation=np.array([0.0, 1.8, 2.5]),
+    translation=np.array([0.0, 3.3, 3.3]),
     orientation=orientation,
     camera_axes="usd",
 )
@@ -268,10 +269,101 @@ camera.set_local_pose(
 - 如果目标是“API 返回的世界位姿正确”，优先检查 `get_world_pose(camera_axes="world")`。
 - 如果目标是“GUI Property 面板里直接显示某组欧拉角”，必须按 USD/local pose 的方式去写，不要直接套 `world` camera axes 的默认欧拉角转换。
 
+#### 6.4.2 Camera 外参里的四元数顺序
+
+这里还有一个和客户端协议直接相关的固定约定，也必须明确记下来。
+
+- 共享协议 `docs/protocols/llm_decision_making__robot_service.md` 中，camera 外参字段名写的是 `quaternion_xyzw`。
+- 这表示对外 HTTP 响应里的四元数顺序固定是 `[x, y, z, w]`。
+- 当前 `robot_service` 的 Pydantic schema 也和这个协议保持一致。
+
+但 Isaac Sim / Isaac Core 侧要注意：
+
+- `camera.get_world_pose(camera_axes="world")` 返回的是标量在前的四元数，也就是 `[w, x, y, z]`。
+- 因此在 `worker/environment.py` 里组装 `/cameras` 响应时，不能把 Isaac 返回值原样透传。
+- 当前正确做法是先拿到 `camera_orientation_wxyz`，再转换成协议要求的 `quaternion_xyzw`。
+
+也就是说，当前实现遵循的是：
+
+```text
+Isaac 内部返回: [w, x, y, z]
+对外协议返回:  [x, y, z, w]
+```
+
+后续如果客户端、感知模块或调试脚本要读取这个字段，必须按 `xyzw` 去解释；如果某一侧内部库要求 `wxyz`，就在那里显式做一次转换，不要改共享协议字段含义。
+
 #### 6.5 当前云主机上的实现约定
 
 - 当前分支优先使用 `isaacsim.*` import path，不再新增 `omni.isaac.*` 写法。
 - 这是因为当前云主机的 Isaac Sim `5.0.0-rc.45` 运行日志已经持续给出 `omni.isaac.*` 相关 deprecation warning，而 `isaacsim.core.api.*` 与官方 5.x 示例、安装内容是对齐的。
+
+### 7. 当前推荐启动方式
+
+下面这两条启动方式是当前已经确认、后续和客户端联调时可以直接使用的命令。
+
+#### 7.1 启动整个 `robot_service` API
+
+这是和后续客户端联调时应当使用的正式启动方式。
+
+```bash
+ISAAC_SIM_ROOT=/root/isaacsim \
+ROBOT_SERVICE_HOST=127.0.0.1 \
+ROBOT_SERVICE_PORT=18080 \
+RUNS_DIR=/root/robot_task/robot_service/runs \
+robot_service/scripts/start_api_server.sh
+```
+
+说明：
+
+- 这条命令启动的是 FastAPI API 进程。
+- API 进程本身不会打开 GUI。
+- 当客户端后续调用 `POST /sessions` 时，API 才会按需拉起 Isaac worker。
+- 当前 worker 默认是无头启动，对应代码里的 `SimulationApp({"headless": True})`。
+- 因此，正常的协议联调应该始终用这条 API 启动命令，而不是用 GUI 脚本代替。
+
+如果想直接看服务启动脚本本身，入口文件是：
+
+- [start_api_server.sh](/root/robot_task/robot_service/scripts/start_api_server.sh)
+
+#### 7.2 启动 GUI 预览
+
+这条命令只用于人工检查场景摆放、相机朝向和基础环境，不用于正式 API 联调。
+
+```bash
+ISAAC_SIM_ROOT=/root/isaacsim \
+robot_service/scripts/launch_env_preview_gui.sh env-default
+```
+
+说明：
+
+- 这条命令会直接启动 Isaac Sim GUI，并加载指定 `environment_id`。
+- 它不会启动 FastAPI API，也不会模拟客户端 HTTP 调用链路。
+- 当前默认环境是 `env-default`，如果以后新增桌面环境，可以把最后一个参数换成对应的 `environment_id`。
+- 检查完成后，直接关闭 GUI 窗口即可退出。
+
+如果想看 GUI 启动脚本本身，入口文件是：
+
+- [launch_env_preview_gui.sh](/root/robot_task/robot_service/scripts/launch_env_preview_gui.sh)
+
+#### 7.3 如果要自己跑一遍 HTTP smoke test
+
+在 API 已经启动的前提下，可以用下面这条命令直接模拟客户端打一遍第一阶段链路：
+
+```bash
+ROBOT_SERVICE_BASE_URL=http://127.0.0.1:18080 \
+robot_service/scripts/smoke_stage1_http.sh env-default
+```
+
+这条脚本会自动完成：
+
+- `POST /sessions`
+- `GET /sessions/{session_id}`
+- `GET /sessions/{session_id}/robot`
+- `GET /sessions/{session_id}/cameras`
+- `GET /artifacts/{artifact_id}`
+- `DELETE /sessions/{session_id}`
+
+并把请求、响应、日志和下载到的 artifact 一起落到 `robot_service/runs/review/...` 下面，方便排查和回看。
 
 ## 第一阶段推荐实现
 
