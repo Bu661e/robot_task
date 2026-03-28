@@ -11,6 +11,24 @@ def test_environment_runtime_tracks_environment_id_and_default_assets():
 
     assert runtime.current_environment_id == "env-default"
     assert runtime.scene_assets == ["ground", "light", "block"]
+    assert runtime.world is None
+
+
+def test_environment_runtime_uses_isaac_loader_when_simulation_app_is_present(monkeypatch):
+    runtime = EnvironmentRuntime(simulation_app=object())
+
+    def fake_load_isaac_scene(environment_id: str) -> None:
+        assert environment_id == "env-default"
+        runtime.scene_assets = ["ground", "light", "block"]
+        runtime.world = object()
+
+    monkeypatch.setattr(runtime, "_load_isaac_scene", fake_load_isaac_scene)
+
+    runtime.load_environment("env-default")
+
+    assert runtime.current_environment_id == "env-default"
+    assert runtime.scene_assets == ["ground", "light", "block"]
+    assert runtime.world is not None
 
 
 def test_query_builders_return_placeholder_robot_and_action_api_data():

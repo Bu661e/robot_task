@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 import json
+import os
+import pty
+import re
+import select
 import subprocess
+import termios
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from secrets import token_hex
 from typing import Protocol
+
+from pydantic import ValidationError
 
 from robot_service.common.messages import WorkerCommand, WorkerEvent
 from robot_service.common.schemas import (
@@ -57,6 +65,14 @@ def _utc_iso() -> str:
     return datetime.now(tz=timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+
+def _sanitize_worker_line(raw_line: str) -> str:
+    sanitized = _ANSI_ESCAPE_RE.sub("", raw_line)
+    return sanitized.strip()
+
+
 class SubprocessWorkerHandle:
     def __init__(self, settings: Settings, session_id: str, session_dir: Path) -> None:
         if not settings.isaac_sim_root:
@@ -65,38 +81,83 @@ class SubprocessWorkerHandle:
         self._session_id = session_id
         self._session_dir = session_dir
         self._lock = threading.Lock()
-        worker_entrypoint = Path(__file__).resolve().parent.parent / "worker" / "entrypoint.py"
+        self._read_buffer = b""
+        repo_root = Path(__file__).resolve().parent.parent.parent
         python_sh = Path(settings.isaac_sim_root) / "python.sh"
+        self._master_fd, slave_fd = pty.openpty()
+        self._configure_slave_pty(slave_fd)
 
-        self._process = subprocess.Popen(
-            [
-                str(python_sh),
-                str(worker_entrypoint),
-                "--session-id",
-                session_id,
-                "--session-dir",
-                str(session_dir),
-            ],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-        )
+        try:
+            self._process = subprocess.Popen(
+                [
+                    str(python_sh),
+                    "-m",
+                    "robot_service.worker.entrypoint",
+                    "--session-id",
+                    session_id,
+                    "--session-dir",
+                    str(session_dir),
+                ],
+                cwd=str(repo_root),
+                stdin=slave_fd,
+                stdout=slave_fd,
+                stderr=slave_fd,
+                close_fds=True,
+            )
+        finally:
+            os.close(slave_fd)
+
+    @staticmethod
+    def _configure_slave_pty(slave_fd: int) -> None:
+        attrs = termios.tcgetattr(slave_fd)
+        attrs[3] &= ~termios.ECHO
+        termios.tcsetattr(slave_fd, termios.TCSANOW, attrs)
 
     def send(self, command: WorkerCommand, timeout_s: float) -> WorkerEvent:
-        del timeout_s  # Timeout handling is deferred until the worker integration is available.
-        if self._process.stdin is None or self._process.stdout is None:
-            raise RobotServiceError("Worker pipes are unavailable.")
+        deadline = time.monotonic() + timeout_s
+        last_ignored_line: str | None = None
 
         with self._lock:
-            self._process.stdin.write(command.model_dump_json() + "\n")
-            self._process.stdin.flush()
-            line = self._process.stdout.readline()
+            os.write(self._master_fd, (command.model_dump_json() + "\n").encode("utf-8"))
 
-        if not line:
-            raise RobotServiceError("Worker closed stdout before replying.")
-        return WorkerEvent.model_validate(json.loads(line))
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    detail = "Timed out waiting for worker response."
+                    if last_ignored_line:
+                        detail += f" Last ignored line: {last_ignored_line}"
+                    raise RobotServiceError(detail)
+
+                ready, _, _ = select.select([self._master_fd], [], [], remaining)
+                if not ready:
+                    detail = "Timed out waiting for worker response."
+                    if last_ignored_line:
+                        detail += f" Last ignored line: {last_ignored_line}"
+                    raise RobotServiceError(detail)
+
+                try:
+                    chunk = os.read(self._master_fd, 4096)
+                except OSError as exc:
+                    raise RobotServiceError("Worker PTY closed before replying.") from exc
+
+                if not chunk:
+                    detail = "Worker closed stdout before replying."
+                    if last_ignored_line:
+                        detail += f" Last ignored line: {last_ignored_line}"
+                    raise RobotServiceError(detail)
+
+                self._read_buffer += chunk
+                while b"\n" in self._read_buffer:
+                    raw_line, self._read_buffer = self._read_buffer.split(b"\n", 1)
+                    stripped = _sanitize_worker_line(raw_line.decode("utf-8", errors="replace"))
+                    if not stripped:
+                        continue
+
+                    try:
+                        return WorkerEvent.model_validate(json.loads(stripped))
+                    except (json.JSONDecodeError, ValidationError):
+                        last_ignored_line = stripped[:200]
+                        continue
 
     def close(self) -> None:
         if self._process.poll() is None:
@@ -106,6 +167,7 @@ class SubprocessWorkerHandle:
             except subprocess.TimeoutExpired:
                 self._process.kill()
                 self._process.wait(timeout=5)
+        os.close(self._master_fd)
 
     def is_alive(self) -> bool:
         return self._process.poll() is None
@@ -152,6 +214,7 @@ class RobotServiceManager:
                 event = self._send_worker_command(
                     "load_environment",
                     {"environment_id": request.environment_id},
+                    timeout_s=self._settings.worker_start_timeout_s,
                 )
             except Exception as exc:
                 self._mark_session_error(str(exc))
@@ -305,7 +368,12 @@ class RobotServiceManager:
     def _build_worker(self, session_id: str, session_dir: Path) -> WorkerHandleProtocol:
         return SubprocessWorkerHandle(self._settings, session_id, session_dir)
 
-    def _send_worker_command(self, command_type: str, payload: dict) -> WorkerEvent:
+    def _send_worker_command(
+        self,
+        command_type: str,
+        payload: dict,
+        timeout_s: float | None = None,
+    ) -> WorkerEvent:
         if self.worker_handle is None:
             raise RobotServiceError("Worker is not available.")
         if not self.worker_handle.is_alive():
@@ -315,7 +383,10 @@ class RobotServiceManager:
             command_type=command_type,  # type: ignore[arg-type]
             payload=payload,
         )
-        return self.worker_handle.send(command, timeout_s=self._settings.worker_command_timeout_s)
+        return self.worker_handle.send(
+            command,
+            timeout_s=timeout_s if timeout_s is not None else self._settings.worker_command_timeout_s,
+        )
 
     def _run_task_in_background(
         self,

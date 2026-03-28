@@ -1,8 +1,23 @@
 # Robot Service Cloud Bring-Up TODO
 
-**Branch:** `feature/robot-service`  
-**Current commit:** `41e3fdf`  
-**Current local verification:** `uv run --project robot_service pytest robot_service/tests -q` -> `18 passed`
+**Branch:** `feature/robot-service`
+**Original local handoff commit:** `41e3fdf`
+**Current cloud-host review head:** `0947719`
+**Cloud host Isaac Sim root:** `/root/isaacsim`
+**Current non-GPU verification:** `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --project robot_service pytest robot_service/tests -q` -> `22 passed`
+**Current cloud verification (`2026-03-28`):**
+- worker standalone smoke succeeded with `/root/isaacsim/python.sh -m robot_service.worker.entrypoint`
+- real `SimulationApp` startup succeeded on the cloud host
+- one internal API smoke succeeded on `127.0.0.1:18080` before the public API was narrowed to first-phase scope
+
+## Cloud Host Notes
+
+- On this cloud host, the Isaac Sim launcher script is `/root/isaacsim/python.sh`.
+- `ISAAC_SIM_ROOT` is not exported by default in the current shell, so bring-up commands should set it explicitly.
+- Do not start Isaac Sim with `python.sh` until the cloud GPU/runtime prerequisite is ready.
+- The worker should be launched as a module with `-m robot_service.worker.entrypoint`, not by passing `robot_service/worker/entrypoint.py` as a script path.
+- Under the real `python.sh` runtime on this host, PTY-backed IPC is more reliable than plain stdin/stdout pipes.
+- Worker stdout may include Isaac/Kit logs and ANSI control sequences before JSON events, so the manager must ignore/sanitize non-JSON lines.
 
 ## Current State
 
@@ -11,9 +26,9 @@ The repository already contains the first runnable skeleton for `robot_service`:
 - `FastAPI` API process
 - single active session
 - single active task
-- single Isaac worker subprocess
+- single Isaac worker subprocess using PTY-backed IPC
 - `environment_id` accepted by `POST /sessions` and forwarded to the worker
-- placeholder worker environment with default `ground`, `light`, `block`
+- minimal real worker environment with default `ground`, `light`, `block`
 - placeholder task execution path
 
 Current key files:
@@ -63,6 +78,7 @@ Confirm on the cloud host:
 - Isaac Sim version is really `5.0.0`
 - `python.sh` path is known
 - GPU is visible
+- GPU/runtime startup has been completed before any Isaac Sim bring-up attempt
 - required display/headless settings are known
 - repo branch is `feature/robot-service`
 
@@ -70,26 +86,35 @@ Minimum checks:
 
 ```bash
 git branch --show-current
+git rev-parse --short HEAD
 pwd
+export ISAAC_SIM_ROOT=/root/isaacsim
 echo "$ISAAC_SIM_ROOT"
 ls "$ISAAC_SIM_ROOT"
-"$ISAAC_SIM_ROOT/python.sh" --help
+cat "$ISAAC_SIM_ROOT/VERSION"
+nvidia-smi
 ```
 
 ### 2. Worker Standalone Smoke Test
 
-Before involving the API, verify the worker entrypoint can be launched by Isaac Sim Python:
+Do not run this section until the cloud GPU/runtime prerequisite is satisfied.
+
+Before involving the API, verify the worker entrypoint can be launched by Isaac Sim Python and can complete one JSON round-trip:
 
 ```bash
-"$ISAAC_SIM_ROOT/python.sh" robot_service/worker/entrypoint.py --session-id smoke-session --session-dir /tmp/robot-service-smoke
+mkdir -p /tmp/robot-service-smoke
+printf '%s\n' '{"request_id":"req-smoke","command_type":"load_environment","payload":{"environment_id":"env-default"}}' \
+  | "$ISAAC_SIM_ROOT/python.sh" -m robot_service.worker.entrypoint \
+      --session-id smoke-session \
+      --session-dir /tmp/robot-service-smoke
 ```
 
 Expected outcome for this stage:
 
 - the process starts
 - `SimulationApp` initialization is attempted successfully
-- the process can receive a simple JSON command from stdin
-- the process can return JSON to stdout
+- the process can receive one JSON command from stdin
+- the process can return one `environment_loaded` JSON event to stdout
 
 If this fails, stop and fix worker startup first. Do not continue into API work.
 
@@ -112,40 +137,56 @@ Do **not** expand to full tabletop object presets yet unless the minimum scene i
 
 ### 4. API To Worker Real Bring-Up
 
-After the worker can start on the cloud host, run the API and test the main flow:
+After the worker can start on the cloud host, run the API and test the current first-phase public flow:
 
 1. `POST /sessions`
 2. `GET /sessions/{session_id}`
 3. `GET /sessions/{session_id}/robot`
-4. `GET /sessions/{session_id}/action-apis`
-5. `POST /sessions/{session_id}/tasks`
-6. `DELETE /sessions/{session_id}`
+4. `GET /sessions/{session_id}/cameras`
+5. `DELETE /sessions/{session_id}`
+
+Historical note:
+
+- before the public API was narrowed to first-phase scope, the internal placeholder `action-apis/tasks` flow was also smoke-tested once on the cloud host
 
 The first acceptance target is not “robot completes a real pick-and-place”.
 The first acceptance target is “API and worker stay coherent under a real Isaac Sim runtime”.
 
 ## Concrete TODO
 
-- [ ] Verify cloud host has usable Isaac Sim `5.0.0` and a valid `ISAAC_SIM_ROOT`
-- [ ] Run `robot_service/worker/entrypoint.py` directly with `python.sh`
-- [ ] Confirm stdin/stdout JSON communication works under real Isaac Sim runtime
-- [ ] Replace placeholder environment setup in `robot_service/worker/environment.py` with a real minimal scene
-- [ ] Confirm `POST /sessions` moves from `starting` to `ready` on the cloud host
-- [ ] Confirm `GET /sessions/{id}/robot` returns a real response under Isaac Sim
-- [ ] Confirm `GET /sessions/{id}/action-apis` still returns the placeholder API description
-- [ ] Confirm `POST /sessions/{id}/tasks` still goes through the state machine under real worker startup
-- [ ] Decide whether camera output should be implemented next or task execution should be implemented next
+- [x] Verify cloud host has usable Isaac Sim `5.0.0`, a valid `ISAAC_SIM_ROOT`, and a ready GPU/runtime
+- [x] Run `robot_service.worker.entrypoint` with `python.sh -m` after the GPU/runtime prerequisite is met
+- [x] Confirm one stdin/stdout JSON round-trip works under real Isaac Sim runtime
+- [x] Replace placeholder environment setup in `robot_service/worker/environment.py` with a real minimal scene
+- [x] Confirm `POST /sessions` moves from `starting` to `ready` on the cloud host
+- [x] Confirm `GET /sessions/{id}/robot` returns a real response under Isaac Sim
+- [ ] Confirm `GET /sessions/{id}/cameras` returns a worker-backed response under real Isaac Sim
+- [ ] Confirm `GET /artifacts/{artifact_id}` works once real camera artifacts are produced
+- [ ] Implement the first-phase camera/depth output path next
 
 ## Suggested First Commands On The Cloud Host
 
-These are the first commands the next window should likely run after pulling the branch:
+These are the first commands the next window should likely run after pulling the branch, before trying to start Isaac Sim:
 
 ```bash
 git branch --show-current
 git rev-parse --short HEAD
-uv run --project robot_service pytest robot_service/tests -q
+export ISAAC_SIM_ROOT=/root/isaacsim
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --project robot_service pytest robot_service/tests -q
 echo "$ISAAC_SIM_ROOT"
-"$ISAAC_SIM_ROOT/python.sh" robot_service/worker/entrypoint.py --session-id smoke-session --session-dir /tmp/robot-service-smoke
+ls "$ISAAC_SIM_ROOT/python.sh"
+cat "$ISAAC_SIM_ROOT/VERSION"
+nvidia-smi
+```
+
+Only after the GPU/runtime prerequisite is ready:
+
+```bash
+mkdir -p /tmp/robot-service-smoke
+printf '%s\n' '{"request_id":"req-smoke","command_type":"load_environment","payload":{"environment_id":"env-default"}}' \
+  | "$ISAAC_SIM_ROOT/python.sh" -m robot_service.worker.entrypoint \
+      --session-id smoke-session \
+      --session-dir /tmp/robot-service-smoke
 ```
 
 ## Acceptance Criteria For The Next Phase

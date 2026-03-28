@@ -1,22 +1,26 @@
 from __future__ import annotations
 
+import os
+import pty
 import threading
 import time
 
 import pytest
 
-from robot_service.common.messages import WorkerEvent
+from robot_service.common.messages import WorkerCommand, WorkerEvent
 from robot_service.common.schemas import CreateSessionRequest, CreateTaskRequest, TaskContent
 from robot_service.runtime.settings import Settings
 from robot_service.api.manager import (
     RobotServiceConflictError,
     RobotServiceManager,
+    SubprocessWorkerHandle,
 )
 
 
 class FakeWorkerHandle:
     def __init__(self) -> None:
         self.commands = []
+        self.timeouts = []
         self._closed = False
         self._run_task_started = threading.Event()
         self._finish_run_task = threading.Event()
@@ -24,6 +28,7 @@ class FakeWorkerHandle:
 
     def send(self, command, timeout_s: float) -> WorkerEvent:
         self.commands.append(command)
+        self.timeouts.append(timeout_s)
         if command.command_type == "load_environment":
             return WorkerEvent(
                 request_id=command.request_id,
@@ -101,6 +106,7 @@ def test_create_session_sends_environment_id_to_worker():
     assert session.session_status == "ready"
     assert handle.commands[0].command_type == "load_environment"
     assert handle.commands[0].payload["environment_id"] == "env-default"
+    assert handle.timeouts[0] == manager._settings.worker_start_timeout_s
 
 
 def test_create_session_rejects_second_active_session():
@@ -179,3 +185,126 @@ def test_delete_session_rejects_while_task_is_running():
         manager.delete_session(session.session_id)
 
     handle.finish_task("task_succeeded")
+
+
+def test_subprocess_worker_handle_skips_non_json_stdout_lines(monkeypatch, tmp_path):
+    class FakeProcess:
+        def poll(self) -> None:
+            return None
+
+        def terminate(self) -> None:
+            return None
+
+        def wait(self, timeout: float | None = None) -> int:
+            return 0
+
+        def kill(self) -> None:
+            return None
+
+    master_fd, slave_fd = pty.openpty()
+    writer_fd = os.dup(slave_fd)
+
+    def fake_openpty():
+        return master_fd, slave_fd
+
+    def fake_popen(*args, **kwargs):
+        return FakeProcess()
+
+    monkeypatch.setattr("robot_service.api.manager.pty.openpty", fake_openpty)
+    monkeypatch.setattr("robot_service.api.manager.subprocess.Popen", fake_popen)
+
+    settings = Settings(
+        robot_service_host="127.0.0.1",
+        robot_service_port=8000,
+        isaac_sim_root="/root/isaacsim",
+        runs_dir=tmp_path,
+        log_level="INFO",
+    )
+    handle = SubprocessWorkerHandle(settings=settings, session_id="sess-demo", session_dir=tmp_path / "run")
+
+    def emit_lines() -> None:
+        time.sleep(0.01)
+        os.write(writer_fd, b"[Info] Isaac Sim startup log\n")
+        os.write(
+            writer_fd,
+            b'{"request_id":"req-1","event_type":"environment_loaded","payload":{"environment_id":"env-default"}}\n',
+        )
+
+    writer_thread = threading.Thread(target=emit_lines)
+    writer_thread.start()
+
+    event = handle.send(
+        WorkerCommand(
+            request_id="req-1",
+            command_type="load_environment",
+            payload={"environment_id": "env-default"},
+        ),
+        timeout_s=1.0,
+    )
+
+    assert event.event_type == "environment_loaded"
+    assert event.payload["environment_id"] == "env-default"
+    writer_thread.join()
+    os.close(writer_fd)
+    handle.close()
+
+
+def test_subprocess_worker_handle_strips_ansi_prefix_from_json_lines(monkeypatch, tmp_path):
+    class FakeProcess:
+        def poll(self) -> None:
+            return None
+
+        def terminate(self) -> None:
+            return None
+
+        def wait(self, timeout: float | None = None) -> int:
+            return 0
+
+        def kill(self) -> None:
+            return None
+
+    master_fd, slave_fd = pty.openpty()
+    writer_fd = os.dup(slave_fd)
+
+    def fake_openpty():
+        return master_fd, slave_fd
+
+    def fake_popen(*args, **kwargs):
+        return FakeProcess()
+
+    monkeypatch.setattr("robot_service.api.manager.pty.openpty", fake_openpty)
+    monkeypatch.setattr("robot_service.api.manager.subprocess.Popen", fake_popen)
+
+    settings = Settings(
+        robot_service_host="127.0.0.1",
+        robot_service_port=8000,
+        isaac_sim_root="/root/isaacsim",
+        runs_dir=tmp_path,
+        log_level="INFO",
+    )
+    handle = SubprocessWorkerHandle(settings=settings, session_id="sess-demo", session_dir=tmp_path / "run")
+
+    def emit_lines() -> None:
+        time.sleep(0.01)
+        os.write(
+            writer_fd,
+            b'\x1b[0m{"request_id":"req-ansi","event_type":"environment_loaded","payload":{"environment_id":"env-default"}}\n',
+        )
+
+    writer_thread = threading.Thread(target=emit_lines)
+    writer_thread.start()
+
+    event = handle.send(
+        WorkerCommand(
+            request_id="req-ansi",
+            command_type="load_environment",
+            payload={"environment_id": "env-default"},
+        ),
+        timeout_s=1.0,
+    )
+
+    assert event.event_type == "environment_loaded"
+    assert event.payload["environment_id"] == "env-default"
+    writer_thread.join()
+    os.close(writer_fd)
+    handle.close()

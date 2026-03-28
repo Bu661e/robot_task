@@ -44,7 +44,21 @@ def main() -> int:
     runtime = EnvironmentRuntime(session_dir=session_dir, simulation_app=simulation_app)
     task_runner = TaskRunner(runtime)
 
-    for raw_line in sys.stdin:
+    # Isaac Sim launched via python.sh may defer text-stdin iteration until EOF.
+    # Read from the binary buffer directly so line-based commands can be processed
+    # while stdin remains open for later requests.
+    stdin_buffer = getattr(sys.stdin, "buffer", None)
+    while True:
+        if stdin_buffer is not None:
+            raw_bytes = stdin_buffer.readline()
+            if not raw_bytes:
+                break
+            raw_line = raw_bytes.decode("utf-8", errors="replace")
+        else:
+            raw_line = sys.stdin.readline()
+            if not raw_line:
+                break
+
         if not raw_line.strip():
             continue
         command = WorkerCommand.model_validate(json.loads(raw_line))

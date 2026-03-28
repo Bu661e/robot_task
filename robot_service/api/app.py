@@ -5,14 +5,10 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from robot_service.api.manager import RobotServiceError, RobotServiceManager
 from robot_service.common.schemas import (
-    ActionApisResponse,
     CamerasResponse,
     CreateSessionRequest,
-    CreateTaskRequest,
     RobotStatusResponse,
     SessionResponse,
-    TaskListResponse,
-    TaskResponse,
 )
 from robot_service.runtime.settings import Settings
 
@@ -44,26 +40,6 @@ def create_app(manager: RobotServiceManager | None = None) -> FastAPI:
     @app.get("/sessions/{session_id}/cameras", response_model=CamerasResponse)
     async def get_cameras(session_id: str) -> CamerasResponse:
         return app.state.manager.get_cameras(session_id)
-
-    @app.get("/sessions/{session_id}/action-apis", response_model=ActionApisResponse)
-    async def get_action_apis(session_id: str) -> ActionApisResponse:
-        return app.state.manager.get_action_apis(session_id)
-
-    @app.post("/sessions/{session_id}/tasks", response_model=TaskResponse)
-    async def create_task(session_id: str, request: CreateTaskRequest) -> TaskResponse:
-        return app.state.manager.create_task(session_id, request)
-
-    @app.get("/sessions/{session_id}/tasks", response_model=TaskListResponse)
-    async def list_tasks(session_id: str) -> TaskListResponse:
-        return app.state.manager.list_tasks(session_id)
-
-    @app.get("/sessions/{session_id}/tasks/{session_task_id}", response_model=TaskResponse)
-    async def get_task(session_id: str, session_task_id: str) -> TaskResponse:
-        return app.state.manager.get_task(session_id, session_task_id)
-
-    @app.post("/sessions/{session_id}/tasks/{session_task_id}/cancel", response_model=TaskResponse)
-    async def cancel_task(session_id: str, session_task_id: str) -> TaskResponse:
-        return app.state.manager.cancel_task(session_id, session_task_id)
 
     @app.get("/artifacts/{artifact_id}")
     async def download_artifact(artifact_id: str) -> FileResponse:

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import threading
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from robot_service.api.app import create_app
 from robot_service.api.manager import RobotServiceManager
 from robot_service.common.messages import WorkerEvent
+from robot_service.common.schemas import ArtifactRecord
 from robot_service.runtime.settings import Settings
 
 
@@ -14,24 +15,15 @@ class FakeWorkerHandle:
     def __init__(self) -> None:
         self.commands = []
         self._closed = False
-        self._run_task_started = threading.Event()
-        self._finish_run_task = threading.Event()
 
     def send(self, command, timeout_s: float) -> WorkerEvent:
+        del timeout_s
         self.commands.append(command)
         if command.command_type == "load_environment":
             return WorkerEvent(
                 request_id=command.request_id,
                 event_type="environment_loaded",
                 payload={"environment_id": command.payload["environment_id"]},
-            )
-        if command.command_type == "run_task":
-            self._run_task_started.set()
-            self._finish_run_task.wait(timeout=timeout_s)
-            return WorkerEvent(
-                request_id=command.request_id,
-                event_type="task_succeeded",
-                payload={},
             )
         if command.command_type == "shutdown":
             self._closed = True
@@ -42,6 +34,16 @@ class FakeWorkerHandle:
                 event_type="robot_status",
                 payload={"robot_status": "ready", "timestamp": "2026-03-28T00:00:00Z"},
             )
+        if command.command_type == "get_cameras":
+            return WorkerEvent(
+                request_id=command.request_id,
+                event_type="cameras_payload",
+                payload={
+                    "timestamp": "2026-03-28T00:00:01Z",
+                    "cameras": [],
+                    "ext": {"note": "Placeholder camera payload"},
+                },
+            )
         raise AssertionError(f"Unexpected command type: {command.command_type}")
 
     def close(self) -> None:
@@ -49,10 +51,6 @@ class FakeWorkerHandle:
 
     def is_alive(self) -> bool:
         return not self._closed
-
-    def wait_for_task_start(self) -> None:
-        assert self._run_task_started.wait(timeout=1.0)
-
 
 def create_test_client() -> tuple[TestClient, FakeWorkerHandle]:
     handle = FakeWorkerHandle()
@@ -95,50 +93,63 @@ def test_second_session_request_returns_409():
     assert response.status_code == 409
 
 
-def test_post_task_returns_queued_task():
+def test_get_robot_and_cameras_return_first_phase_payloads():
     client, _ = create_test_client()
     session = client.post(
         "/sessions",
         json={"backend_type": "isaac_sim", "environment_id": "env-default"},
     ).json()
 
-    response = client.post(
-        f"/sessions/{session['session_id']}/tasks",
-        json={
-            "task": {
-                "task_id": "task-1",
-                "instruction": "Pick up the cube",
-                "object_texts": ["cube"],
-            },
-            "policy_source": "def run_policy(robot, perception_data):\n    return None",
-            "perception_data": {"objects": []},
-        },
-    )
+    robot_response = client.get(f"/sessions/{session['session_id']}/robot")
+    cameras_response = client.get(f"/sessions/{session['session_id']}/cameras")
 
-    assert response.status_code == 200
-    assert response.json()["task_status"] == "queued"
+    assert robot_response.status_code == 200
+    assert robot_response.json()["robot_status"] == "ready"
+    assert cameras_response.status_code == 200
+    assert cameras_response.json()["cameras"] == []
 
 
-def test_delete_session_while_task_is_running_returns_409():
-    client, handle = create_test_client()
+def test_second_phase_routes_are_not_exposed_in_first_phase():
+    client, _ = create_test_client()
     session = client.post(
         "/sessions",
         json={"backend_type": "isaac_sim", "environment_id": "env-default"},
     ).json()
-    client.post(
-        f"/sessions/{session['session_id']}/tasks",
-        json={
-            "task": {
-                "task_id": "task-1",
-                "instruction": "Pick up the cube",
-                "object_texts": ["cube"],
-            },
-            "policy_source": "def run_policy(robot, perception_data):\n    return None",
-            "perception_data": {"objects": []},
-        },
+
+    action_apis = client.get(f"/sessions/{session['session_id']}/action-apis")
+    create_task = client.post(f"/sessions/{session['session_id']}/tasks", json={})
+    list_tasks = client.get(f"/sessions/{session['session_id']}/tasks")
+
+    assert action_apis.status_code == 404
+    assert create_task.status_code == 404
+    assert list_tasks.status_code == 404
+
+
+def test_download_artifact_returns_binary_file(tmp_path):
+    handle = FakeWorkerHandle()
+    manager = RobotServiceManager(
+        settings=Settings(
+            robot_service_host="127.0.0.1",
+            robot_service_port=8000,
+            isaac_sim_root="/opt/isaacsim",
+            runs_dir=tmp_path,
+            log_level="INFO",
+        ),
+        worker_factory=lambda session_id, session_dir: handle,
     )
+    artifact_path = tmp_path / "artifact.png"
+    artifact_bytes = b"fake-png-bytes"
+    artifact_path.write_bytes(artifact_bytes)
+    manager.artifact_index["artifact-demo"] = ArtifactRecord(
+        artifact_id="artifact-demo",
+        session_id="sess-demo",
+        content_type="image/png",
+        file_path=str(Path(artifact_path)),
+    )
+    client = TestClient(create_app(manager))
 
-    handle.wait_for_task_start()
-    response = client.delete(f"/sessions/{session['session_id']}")
+    response = client.get("/artifacts/artifact-demo")
 
-    assert response.status_code == 409
+    assert response.status_code == 200
+    assert response.content == artifact_bytes
+    assert response.headers["content-type"] == "image/png"
