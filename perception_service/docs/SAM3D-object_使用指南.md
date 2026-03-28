@@ -185,6 +185,18 @@ checkpoints/hf/pipeline.yaml
 
 因为 `demo.py` 和 notebook 都是按这个固定路径加载配置的。
 
+在当前机器上的固定约定是：
+
+- 权重真实目录：`/root/hf`
+- 仓库内使用的入口路径：`/root/robot_task/perception_service/SAM3D-object/checkpoints/hf`
+- 这个入口路径应是一个软链接，指向 `/root/hf`
+
+如果软链接丢失，可执行：
+
+```bash
+ln -s /root/hf /root/robot_task/perception_service/SAM3D-object/checkpoints/hf
+```
+
 ## 6. 最小可运行方式
 
 ### 6.1 直接跑 demo

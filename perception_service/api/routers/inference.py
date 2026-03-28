@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
 
-from perception_service_api.schemas import PerceptionRequest, PerceptionResponse
-from perception_service_api.services.inference_service import PerceptionInferenceService
+from ..schemas import PerceptionRequest, PerceptionResponse
+from ..services.inference_service import PerceptionInferenceService
 
 
 router = APIRouter(tags=["perception"])

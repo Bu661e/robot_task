@@ -55,6 +55,18 @@ model_path = "/absolute/path/to/sam3.pt"
 
 不要假设 `ultralytics` 会像 YOLO 一样替你拉权重。
 
+在当前机器上的固定约定是：
+
+- 权重真实路径：`/root/sam3.pt`
+- 仓库内使用的入口路径：`/root/robot_task/perception_service/sam3-ultralytics/sam3.pt`
+- 这个入口路径应是一个软链接，指向 `/root/sam3.pt`
+
+如果软链接丢失，可执行：
+
+```bash
+ln -s /root/sam3.pt /root/robot_task/perception_service/sam3-ultralytics/sam3.pt
+```
+
 ### 2.3 `SimpleTokenizer` 报错时怎么修
 
 官方文档还专门提到一个典型问题：

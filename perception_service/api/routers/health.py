@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from perception_service_api.schemas import HealthResponse
+from ..schemas import HealthResponse
 
 
 router = APIRouter(tags=["health"])

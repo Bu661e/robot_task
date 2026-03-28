@@ -6,9 +6,9 @@ from typing import Any, Annotated
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile, status
 from fastapi.responses import FileResponse
 
-from perception_service_api.errors import ApiError
-from perception_service_api.schemas import ArtifactMetadata, ArtifactType
-from perception_service_api.services.artifact_store import ArtifactStore
+from ..errors import ApiError
+from ..schemas import ArtifactMetadata, ArtifactType
+from ..services.artifact_store import ArtifactStore
 
 
 router = APIRouter(tags=["artifacts"])

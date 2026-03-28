@@ -5,23 +5,23 @@ import secrets
 from datetime import datetime, timezone
 from typing import Any
 
-from perception_service_api.errors import ApiError
-from perception_service_api.settings import (
+from ..errors import ApiError
+from ..settings import (
     SAM3_BACKEND_SCRIPT,
     SAM3_PYTHON,
     SAM3D_OBJECTS_BACKEND_SCRIPT,
     SAM3D_OBJECTS_PYTHON,
 )
-from perception_service_api.schemas import (
+from ..schemas import (
     ObservationPayload,
     ObservationResult,
     PerceptionRequest,
     PerceptionResponse,
     SceneArtifacts,
 )
-from perception_service_api.services.artifact_store import ArtifactStore
-from perception_service_api.services.backend_runner import BackendCommand
-from perception_service_api.services.pointmap import (
+from .artifact_store import ArtifactStore
+from .backend_runner import BackendCommand
+from .pointmap import (
     depth_to_pointmap,
     load_depth_meters,
     load_rgb_size,

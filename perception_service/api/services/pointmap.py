@@ -6,8 +6,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from perception_service_api.errors import ApiError
-from perception_service_api.schemas import ArtifactMetadata, Intrinsics
+from ..errors import ApiError
+from ..schemas import ArtifactMetadata, Intrinsics
 
 
 @dataclass(slots=True)

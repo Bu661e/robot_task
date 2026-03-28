@@ -7,8 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from perception_service_api.errors import ApiError
-from perception_service_api.schemas import ArtifactMetadata, ArtifactType
+from ..errors import ApiError
+from ..schemas import ArtifactMetadata, ArtifactType
 
 
 class ArtifactStore:

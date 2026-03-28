@@ -4,13 +4,13 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from perception_service_api.errors import ApiError
-from perception_service_api.routers.artifacts import router as artifacts_router
-from perception_service_api.routers.health import router as health_router
-from perception_service_api.routers.inference import router as inference_router
-from perception_service_api.services.artifact_store import ArtifactStore
-from perception_service_api.services.inference_service import PerceptionInferenceService
-from perception_service_api.settings import ARTIFACTS_DIR
+from .errors import ApiError
+from .routers.artifacts import router as artifacts_router
+from .routers.health import router as health_router
+from .routers.inference import router as inference_router
+from .services.artifact_store import ArtifactStore
+from .services.inference_service import PerceptionInferenceService
+from .settings import ARTIFACTS_DIR
 
 
 def create_app() -> FastAPI:
