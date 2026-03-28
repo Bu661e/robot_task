@@ -13,6 +13,8 @@ from perception_service_api.settings import (
     SAM3D_OBJECTS_PYTHON,
 )
 from perception_service_api.schemas import (
+    ObservationPayload,
+    ObservationResult,
     PerceptionRequest,
     PerceptionResponse,
     SceneArtifacts,
@@ -42,9 +44,56 @@ class PerceptionInferenceService:
 
     def infer(self, request: PerceptionRequest) -> PerceptionResponse:
         request_id = self._build_request_id()
+        backend_status = self._collect_backend_status(request_id=request_id)
+        observation_results = [
+            self._infer_observation(
+                request_id=request_id,
+                request=request,
+                observation=observation,
+                observation_index=index,
+                backend_status=backend_status,
+            )
+            for index, observation in enumerate(request.observations)
+        ]
+        success = any(result.success for result in observation_results)
+        pointmap_generated_camera_ids = [
+            result.camera_id
+            for result in observation_results
+            if bool(result.ext.get("pointmap_generated"))
+        ]
+        return PerceptionResponse(
+            request_id=request_id,
+            success=success,
+            timestamp=datetime.now(timezone.utc),
+            observation_results=observation_results,
+            error=(
+                {}
+                if success
+                else {
+                    "code": "INTERNAL_ERROR",
+                    "message": "Inference backends are not producing detections yet. Request validation and internal pointmap generation completed for all observations.",
+                }
+            ),
+            ext={
+                "matched_object_texts": [],
+                "unmatched_object_texts": list(request.task.object_texts),
+                "processed_camera_ids": [observation.camera_id for observation in request.observations],
+                "pointmap_generated_camera_ids": pointmap_generated_camera_ids,
+                "backend_status": backend_status,
+            },
+        )
 
-        rgb_metadata = self.artifact_store.get_metadata(request.observation.rgb_artifact_id)
-        depth_metadata = self.artifact_store.get_metadata(request.observation.depth_artifact_id)
+    def _infer_observation(
+        self,
+        *,
+        request_id: str,
+        request: PerceptionRequest,
+        observation: ObservationPayload,
+        observation_index: int,
+        backend_status: dict[str, Any],
+    ) -> ObservationResult:
+        rgb_metadata = self.artifact_store.get_metadata(observation.rgb_image.artifact_id)
+        depth_metadata = self.artifact_store.get_metadata(observation.depth_image.artifact_id)
 
         self._assert_artifact_type(rgb_metadata.artifact_type, "rgb_image", rgb_metadata.artifact_id)
         self._assert_artifact_type(depth_metadata.artifact_type, "depth_image", depth_metadata.artifact_id)
@@ -53,14 +102,15 @@ class PerceptionInferenceService:
         depth_path = self.artifact_store.get_content_path(depth_metadata.artifact_id)
 
         rgb_width, rgb_height = load_rgb_size(rgb_metadata, rgb_path)
-        intrinsics = request.observation.camera_intrinsics
+        intrinsics = observation.intrinsics
         if rgb_width != intrinsics.width or rgb_height != intrinsics.height:
             raise ApiError(
                 status_code=400,
                 error_code="INVALID_REQUEST",
-                message="RGB resolution does not match camera intrinsics.",
+                message="RGB resolution does not match observations[].intrinsics.",
                 ext={
                     "details": {
+                        "camera_id": observation.camera_id,
                         "artifact_id": rgb_metadata.artifact_id,
                         "actual_width": rgb_width,
                         "actual_height": rgb_height,
@@ -73,35 +123,34 @@ class PerceptionInferenceService:
         depth_m = load_depth_meters(
             depth_metadata,
             depth_path,
-            depth_scale_m_per_unit=request.observation.depth_scale_m_per_unit,
+            depth_scale_m_per_unit=observation.depth_scale_m_per_unit,
         )
         pointmap_result = depth_to_pointmap(depth_m, intrinsics)
-        backend_status = self._collect_backend_status(request_id=request_id)
 
         debug_artifact_ids: list[str] = []
         if request.options.include_debug_artifacts:
             debug_payload = self._build_debug_payload(
                 request_id=request_id,
                 request=request,
-                rgb_artifact_id=rgb_metadata.artifact_id,
-                depth_artifact_id=depth_metadata.artifact_id,
+                observation=observation,
+                observation_index=observation_index,
                 pointmap_result=pointmap_result,
                 backend_status=backend_status,
             )
             debug_metadata = self.artifact_store.save_bytes(
                 artifact_type="debug_json",
-                filename=f"{request_id}_preflight.json",
+                filename=f"{request_id}_obs_{observation_index:02d}_preflight.json",
                 content_type="application/json",
                 data=json.dumps(debug_payload, ensure_ascii=True, indent=2).encode("utf-8"),
-                ext={},
+                ext={"camera_id": observation.camera_id},
             )
             debug_artifact_ids.append(debug_metadata.artifact_id)
 
-        return PerceptionResponse(
-            request_id=request_id,
+        return ObservationResult(
+            camera_id=observation.camera_id,
+            observation_timestamp=observation.timestamp,
             success=False,
             coordinate_frame="camera",
-            timestamp=datetime.now(timezone.utc),
             detected_objects=[],
             scene_artifacts=SceneArtifacts(
                 visualization_artifact_ids=[],
@@ -109,14 +158,9 @@ class PerceptionInferenceService:
             ),
             error={
                 "code": "INTERNAL_ERROR",
-                "message": "Inference backends are not producing detections yet. Request validation and internal pointmap generation completed.",
+                "message": "Inference backends are not producing detections yet for this observation. Request validation and internal pointmap generation completed.",
             },
-            ext={
-                "matched_object_texts": [],
-                "unmatched_object_texts": list(request.task.object_texts),
-                "pointmap_generated": True,
-                "backend_status": backend_status,
-            },
+            ext={"pointmap_generated": True},
         )
 
     @staticmethod
@@ -146,21 +190,28 @@ class PerceptionInferenceService:
         *,
         request_id: str,
         request: PerceptionRequest,
-        rgb_artifact_id: str,
-        depth_artifact_id: str,
+        observation: ObservationPayload,
+        observation_index: int,
         pointmap_result: Any,
         backend_status: dict[str, Any],
     ) -> dict[str, Any]:
+        extrinsics = None
+        if observation.extrinsics is not None:
+            extrinsics = observation.extrinsics.model_dump(mode="json")
+
         return {
             "request_id": request_id,
             "task_id": request.task.task_id,
             "object_texts": list(request.task.object_texts),
+            "observation_index": observation_index,
             "observation": {
-                "camera_id": request.observation.camera_id,
-                "camera_frame_id": request.observation.camera_frame_id,
-                "rgb_artifact_id": rgb_artifact_id,
-                "depth_artifact_id": depth_artifact_id,
-                "depth_scale_m_per_unit": request.observation.depth_scale_m_per_unit,
+                "camera_id": observation.camera_id,
+                "rgb_image": observation.rgb_image.model_dump(mode="json", exclude_none=True),
+                "depth_image": observation.depth_image.model_dump(mode="json", exclude_none=True),
+                "intrinsics": observation.intrinsics.model_dump(mode="json"),
+                "extrinsics": extrinsics,
+                "timestamp": observation.timestamp.isoformat(),
+                "ext": dict(observation.ext),
             },
             "pointmap": {
                 "width": pointmap_result.width,

@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image
 
 from perception_service_api.errors import ApiError
-from perception_service_api.schemas import ArtifactMetadata, CameraIntrinsics
+from perception_service_api.schemas import ArtifactMetadata, Intrinsics
 
 
 @dataclass(slots=True)
@@ -79,7 +79,7 @@ def load_depth_meters(
             raise ApiError(
                 status_code=400,
                 error_code="INVALID_REQUEST",
-                message="depth_scale_m_per_unit is required for integer depth images.",
+                message="observations[].ext.depth_scale_m_per_unit is required for integer depth images.",
                 ext={"details": {"artifact_id": metadata.artifact_id}},
             )
         return depth.astype(np.float32) * float(depth_scale_m_per_unit)
@@ -87,13 +87,13 @@ def load_depth_meters(
     return depth.astype(np.float32)
 
 
-def depth_to_pointmap(depth_m: np.ndarray, intrinsics: CameraIntrinsics) -> PointmapResult:
+def depth_to_pointmap(depth_m: np.ndarray, intrinsics: Intrinsics) -> PointmapResult:
     height, width = depth_m.shape
     if width != intrinsics.width or height != intrinsics.height:
         raise ApiError(
             status_code=400,
             error_code="INVALID_REQUEST",
-            message="Depth resolution does not match camera intrinsics.",
+            message="Depth resolution does not match observations[].intrinsics.",
             ext={
                 "details": {
                     "actual_width": width,

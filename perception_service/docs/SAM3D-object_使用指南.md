@@ -74,7 +74,7 @@
 1. 加载 `checkpoints/hf/pipeline.yaml`
 2. 通过 Hydra 实例化 `InferencePipelinePointMap`
 3. 输入 RGB 图 + 单物体 mask
-4. 在当前项目里由 `perception_service` 基于 `depth + camera_intrinsics` 先生成 `pointmap`
+4. 在当前项目里由 `perception_service` 基于 `depth + intrinsics` 先生成 `pointmap`
 5. 做 sparse structure 采样和 SLAT 解码
 6. 输出 Gaussian / mesh / GLB / pose 等结果
 
@@ -431,7 +431,7 @@ scene_gs = make_scene(*outputs)
   - RGB
   - mask
   - depth
-  - camera_intrinsics
+  - intrinsics
   - label
   - seed
 - 在适配层内部生成 `pointmap`

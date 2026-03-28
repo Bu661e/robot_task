@@ -44,8 +44,9 @@
   - `POST /perception/infer`
 - 当前 `POST /perception/infer` 已完成：
   - 协议字段校验
+  - 支持单次请求携带一个或多个 `observations[]`
   - RGB / depth artifact 读取
-  - `depth + camera_intrinsics -> pointmap` 内部生成
+  - `depth + intrinsics -> pointmap` 内部生成
   - `sam3` / `sam3d-objects` 子进程桥接
   - 可选 debug artifact 输出
 - 当前 `POST /perception/infer` 还没有完成：

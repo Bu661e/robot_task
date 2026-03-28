@@ -82,6 +82,12 @@ pip install git+https://github.com/ultralytics/CLIP.git
 - 想用点、框或者已有 mask 提示模型
 - 目标是“切出这个具体实例”
 
+说明：
+
+- 上面说的是 `SAM` 模型本身支持的提示方式
+- 但在当前 `perception_service` 协议里，决策层不会上传 mask 作为输入
+- 当前服务链路里实例 mask 由感知侧调用 SAM3 自己推理生成
+
 不适合：
 
 - 直接用文本找“所有 bottle”
