@@ -189,6 +189,23 @@ class PerceptionRequest(StrictModel):
         return normalized
 
 
+class Sam3DetectionPayload(StrictModel):
+    label: str
+    source_object_text: str
+    score: float
+    bbox_2d_xyxy: list[int] = Field(min_length=4, max_length=4)
+    mask_png_base64: str | None = None
+    ext: dict[str, Any] = Field(default_factory=dict)
+
+
+class Sam3BackendPayload(StrictModel):
+    backend: str
+    status: str
+    detections: list[Sam3DetectionPayload] = Field(default_factory=list)
+    error_message: str | None = None
+    ext: dict[str, Any] = Field(default_factory=dict)
+
+
 class SceneArtifacts(StrictModel):
     visualization_artifact_ids: list[str] = Field(default_factory=list)
     debug_artifact_ids: list[str] = Field(default_factory=list)

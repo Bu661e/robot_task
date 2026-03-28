@@ -91,13 +91,16 @@ runtime/
 - 读取 RGB / depth artifact
 - 校验 RGB 分辨率和 `intrinsics.width/height` 一致
 - 把深度图转换成内部 `pointmap`
+- 调用 `SAM3` 桥接脚本并消费其结构化 JSON 输出
+- 在 `include_mask_artifacts=true` 时保存 `mask_image` artifact
+- 在 3D 结果尚未接通前，把 `SAM3` 的 2D 候选摘要写入 `observation_results[].ext`
 - 按需写出 preflight `debug_json`
 - 返回符合协议的 `PerceptionResponse`
 
 它当前还没有完成：
-- `SAM3` 真实 2D 分割结果接入
 - `SAM3D-object` 真实 3D 重建结果接入
-- `mask_image` / `mesh_glb` / `gaussian_ply` / `pointcloud_ply` 的正式落盘与回传
+- 把 `SAM3` 的 2D 候选升级成协议主结果里的 `detected_objects`
+- `mesh_glb` / `gaussian_ply` / `pointcloud_ply` 的正式落盘与回传
 
 ### 4. `pointmap` 生成
 
@@ -124,7 +127,13 @@ runtime/
 - `sam3-ultralytics/run_sam3_inference.py`
 - `backend_scripts/run_sam3d_inference.py`
 
-现在这两个脚本都还处于 stub 状态，`preflight` 能跑通，但还不会产出真实检测结果。
+当前状态：
+- `run_sam3_inference.py`
+  - 已支持 `preflight` 和 `infer` 两种 JSON 模式
+  - API 层已经可以消费它返回的 2D 候选，并按需落 `mask_image` artifact
+  - 如果模型权重或 `ultralytics` 依赖不可用，会按结构化 `unavailable` / `failed` 返回，而不是直接让 API 进程崩溃
+- `run_sam3d_inference.py`
+  - 仍处于 stub 状态，当前只支持 `preflight`
 
 ### 6. `SAM3` 接入层
 
@@ -167,6 +176,13 @@ API 层使用 `uv` 管理的轻量虚拟环境：
 - 锁文件：`perception_service/uv.lock`
 - 虚拟环境：`perception_service/.venv`
 
+推荐的安装 / 同步方式：
+
+```bash
+cd perception_service
+~/.local/bin/uv sync --group dev
+```
+
 当前 API 层依赖只包括：
 - `fastapi`
 - `uvicorn`
@@ -178,13 +194,21 @@ API 层使用 `uv` 管理的轻量虚拟环境：
 
 ```bash
 cd perception_service
+~/.local/bin/uv run uvicorn app:app --reload
+```
+
+或者在 `uv sync` 已经创建好 `.venv` 后直接运行：
+
+```bash
 .venv/bin/uvicorn app:app --reload
 ```
+
+依赖安装和更新应优先继续使用 `uv`，不要把 API 层 `.venv` 当成随手 `pip install` 的环境。
 
 ### 2. 模型环境分离
 
 当前固定把模型依赖和 API 层拆开：
-- API 进程跑在 `.venv`
+- API 进程跑在 `uv` 管理的 `.venv`
 - `SAM3` 跑在 conda 环境 `sam3`
 - `SAM3D-object` 跑在 conda 环境 `sam3d-objects`
 
@@ -278,31 +302,50 @@ ln -s /root/hf /root/robot_task/perception_service/SAM3D-object/checkpoints/hf
         ]
       },
       "error": {
-        "code": "INTERNAL_ERROR",
-        "message": "Inference backends are not producing detections yet for this observation. Request validation and internal pointmap generation completed."
+        "code": "NOT_IMPLEMENTED",
+        "message": "SAM3 produced 2D candidate masks for this observation, but 3D reconstruction is not integrated yet."
       },
       "ext": {
-        "pointmap_generated": true
+        "pointmap_generated": true,
+        "sam3_candidate_count": 2,
+        "sam3_mask_artifact_ids": [
+          "artifact_mask_image_20260329121000_a1b2c3d4"
+        ],
+        "sam3_matched_object_texts": ["blue_cube"],
+        "sam3_detections": [
+          {
+            "instance_id": "sam3_table_top_blue_cube_0001",
+            "label": "blue_cube",
+            "source_object_text": "blue_cube",
+            "score": 0.94,
+            "source_mask_artifact_id": "artifact_mask_image_20260329121000_a1b2c3d4",
+            "bbox_2d_xyxy": [122, 188, 214, 286],
+            "ext": {}
+          }
+        ]
       }
     }
   ],
   "error": {
-    "code": "INTERNAL_ERROR",
-    "message": "Inference backends are not producing detections yet. Request validation and internal pointmap generation completed for all observations."
+    "code": "NOT_IMPLEMENTED",
+    "message": "SAM3 produced 2D candidate masks for one or more observations, but 3D reconstruction is not integrated yet."
   },
   "ext": {
-    "matched_object_texts": [],
-    "unmatched_object_texts": ["blue_cube", "red_cube"],
+    "matched_object_texts": ["blue_cube"],
+    "unmatched_object_texts": ["red_cube"],
     "processed_camera_ids": ["table_top"],
-    "pointmap_generated_camera_ids": ["table_top"]
+    "pointmap_generated_camera_ids": ["table_top"],
+    "sam3_candidate_camera_ids": ["table_top"],
+    "sam3_candidate_total": 2
   }
 }
 ```
 
 说明：
-- 这是当前 stub 阶段的典型返回
+- 当前如果 `SAM3` 返回 2D 候选，服务会把摘要写入 `observation_results[].ext`
+- 在 `SAM3D-object` 接通之前，`detected_objects` 仍保持为空，顶层 `success` 也仍为 `false`
 - `coordinate_frame` 当前固定为 `"camera"`
-- 后续真实后端接通后，`detected_objects` 和 artifact 引用会变成主内容
+- 后续真实 3D 结果接通后，`detected_objects` 和 3D artifact 引用会变成主内容
 
 ## 典型数据流
 
@@ -314,13 +357,13 @@ ln -s /root/hf /root/robot_task/perception_service/SAM3D-object/checkpoints/hf
 4. `inference_service` 校验 artifact 类型和图像尺寸
 5. `pointmap.py` 在服务内部把 `depth + intrinsics` 转成 `pointmap`
 6. `backend_runner.py` 探测并调用 `SAM3` / `SAM3D-object` 桥接脚本
-7. 如果开启 `include_debug_artifacts`，保存 preflight `debug_json`
-8. API 层组装 `PerceptionResponse` 返回给上游
+7. 如果 `SAM3` 返回 2D 候选，API 层按需落 `mask_image` artifact，并把摘要写入 `observation_results[].ext`
+8. 如果开启 `include_debug_artifacts`，保存 `debug_json`
+9. API 层组装 `PerceptionResponse` 返回给上游
 
-后续真实推理链路接通后，会在第 6 到第 8 步之间继续增加：
-- 由 `SAM3` 生成 mask / bbox / score
+后续真实推理链路继续接通后，会在第 7 到第 9 步之间继续增加：
 - 由 `SAM3D-object` 基于单物体 mask 和 pointmap 生成 3D 结果
-- 把 `mask_image`、`mesh_glb`、`gaussian_ply`、`pointcloud_ply` 等 artifact 保存并回传引用
+- 把 `mesh_glb`、`gaussian_ply`、`pointcloud_ply` 等 artifact 保存并回传引用
 
 ## 当前目录中的关键文件
 
@@ -350,6 +393,8 @@ ln -s /root/hf /root/robot_task/perception_service/SAM3D-object/checkpoints/hf
   - `SAM3` 桥接脚本
 - `backend_scripts/run_sam3d_inference.py`
   - `SAM3D-object` 桥接脚本
+- `tests/test_inference_service.py`
+  - `inference_service` 的 mock 测试
 - `docs/进程与环境说明.md`
   - API / SAM3 / SAM3D-object 进程边界、环境路径和权重入口
 - `docs/ultralytics_SAM3_使用指南.md`
