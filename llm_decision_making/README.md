@@ -146,8 +146,21 @@ runs/
 它属于 `utils/` 中的通用远端访问工具，而不是主流程编排模块。
 
 `perception_client` 的功能包括：
-- 将当前已经获得的 2D 信息（RGB 图、深度图、任务描述等）发送给 `perception_service`
-- 接收 `perception_service` 返回的 3D 感知结果，包括目标物体的位姿、点云数据等
+- 上传 RGB、depth 等输入 artifact 到 `perception_service`
+- 按共享协议提交 `POST /perception/infer` 请求
+- 下载 `perception_service` 返回的 artifact 内容
+- 接收 `perception_service` 返回的结构化 3D 感知结果，包括目标物体位姿和相关 artifact 引用
+
+当前 `perception_client` 的运行时配置放在 `config/perception_config.py`，包括：
+- `PERCEPTION_BASE_URL`
+- `PERCEPTION_TIMEOUT_S`
+- `PERCEPTION_TRUST_ENV`
+
+当前默认的 `PERCEPTION_BASE_URL` 是 `http://127.0.0.1:8000`，对应本地开发时通过 `uvicorn` 启动的 `perception_service`。
+
+与 `perception_service` 共享协议对应的数据结构放在 `utils/perception_schemas.py`，而不是直接复用感知服务内部的 pydantic schema。
+
+当前阶段只实现了决策侧的 typed schema 和 HTTP client，还没有把 `main.py` 里的 robot 观测链路正式接到 `perception_client`。
 
 ## 数据结构实例
 
@@ -233,6 +246,8 @@ runs/
   - robot HTTP 客户端工具
 - `utils/robot_schemas.py`
   - robot HTTP 协议第一阶段的数据结构
+- `utils/perception_schemas.py`
+  - perception HTTP 协议的数据结构
 - `utils/perception_client.py`
   - perception HTTP 客户端工具
 - `utils/run_logging.py`
@@ -242,6 +257,7 @@ runs/
   - 存放配置文件，包括远端服务地址、模型参数等
   - config/llm_config.py 定义共享 LLM 连接配置，例如 `LLM_BASE_URL`、`LLM_API_KEY` 和 `LLM_TRUST_ENV`
   - config/robot_config.py 定义 `robot_client` 使用的共享连接配置，例如 `ROBOT_BASE_URL`、`ROBOT_BACKEND_TYPE`、`ROBOT_TIMEOUT_S` 和 `ROBOT_TRUST_ENV`
+  - config/perception_config.py 定义 `perception_client` 使用的共享连接配置，例如 `PERCEPTION_BASE_URL`、`PERCEPTION_TIMEOUT_S` 和 `PERCEPTION_TRUST_ENV`
   - config/run_logging_config.py 定义 run 日志根目录 `RUNS_DIR`
   - config/main_config.py 是 `main.py` 的配置文件，定义默认任务文件路径等入口参数
   - config/task_parser_config.py 是 `task_parser` 模块的配置文件，定义模型、prompt 和过滤项等 parser 自身参数
